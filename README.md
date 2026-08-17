@@ -20,6 +20,17 @@ tracelens --target http://localhost:8000 --port 9000
 
 Point an application at `http://localhost:9000`. TraceLens forwards requests to the target API and records the result locally.
 
+## Development
+
+```bash
+cd backend
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e ".[dev]"
+.venv/bin/python -m pytest
+```
+
+The backend supports Python $>=3.12,<3.15$. The proxy-forwarding route is the next implementation phase.
+
 ## V1
 
 - Async HTTP reverse proxy built with FastAPI and HTTPX
@@ -73,4 +84,4 @@ Directories appear as their corresponding implementation phases begin. This keep
 
 ## Status
 
-Architecture complete. The next phase is bootstrapping the Python package, CLI configuration, FastAPI application factory, and proxy-engine test harness.
+Phase 1 complete: Python packaging, validated CLI configuration, FastAPI application factory, reusable HTTP client lifecycle, and test harness. Next: HTTP proxy forwarding.
