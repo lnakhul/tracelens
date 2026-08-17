@@ -29,7 +29,17 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-The backend supports Python $>=3.12,<3.15$. TraceLens exposes local APIs for trace history and metrics; the React dashboard is the next implementation phase.
+In another terminal, start the dashboard:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`. Vite proxies local `/api` requests to TraceLens on port `9000`.
+
+The backend supports Python $>=3.12,<3.15$.
 
 ## V1
 
@@ -85,4 +95,4 @@ Directories appear as their corresponding implementation phases begin. This keep
 
 ## Status
 
-Phase 4 complete: REST APIs for trace history, filtering, detail inspection, metrics, and clearing local data. Next: React dashboard.
+Phase 5 complete: React dashboard with live metrics, server-side traffic filters, trace detail inspection, and local-history clearing. Next: CI and project polish.
