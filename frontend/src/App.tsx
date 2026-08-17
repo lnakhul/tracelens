@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Activity, RefreshCw, Trash2 } from 'lucide-react'
 
 import { MetricCard } from './components/MetricCard'
@@ -33,7 +33,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  async function loadData(activeFilters = filters) {
+  const loadData = useCallback(async (activeFilters = filters) => {
     setError(null)
     try {
       const [traceResponse, metricResponse] = await Promise.all([
@@ -47,13 +47,13 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [filters])
 
   useEffect(() => {
     void loadData()
     const refreshTimer = window.setInterval(() => void loadData(), 2000)
     return () => window.clearInterval(refreshTimer)
-  }, [filters.path, filters.statusCode, filters.minDuration])
+  }, [loadData])
 
   async function selectTrace(traceId: number) {
     setLoadingDetail(true)
