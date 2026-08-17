@@ -29,7 +29,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-The backend supports Python $>=3.12,<3.15$. The proxy-forwarding route is the next implementation phase.
+The backend supports Python $>=3.12,<3.15$. The proxy forwards buffered HTTP requests; trace persistence is the next implementation phase.
 
 ## V1
 
@@ -84,4 +84,4 @@ Directories appear as their corresponding implementation phases begin. This keep
 
 ## Status
 
-Phase 1 complete: Python packaging, validated CLI configuration, FastAPI application factory, reusable HTTP client lifecycle, and test harness. Next: HTTP proxy forwarding.
+Phase 2 complete: HTTP request forwarding, upstream response translation, hop-by-hop header filtering, and gateway error handling. Next: trace capture and SQLite persistence.

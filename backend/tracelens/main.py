@@ -10,9 +10,14 @@ from fastapi import FastAPI
 
 from tracelens.api.routes import router as api_router
 from tracelens.config import Settings, parse_args
+from tracelens.proxy.routes import router as proxy_router
 
 
-def create_app(settings: Settings) -> FastAPI:
+def create_app(
+    settings: Settings,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> FastAPI:
     """Create an application configured for one local upstream target."""
 
     @asynccontextmanager
@@ -20,6 +25,7 @@ def create_app(settings: Settings) -> FastAPI:
         app.state.http_client = httpx.AsyncClient(
             timeout=settings.request_timeout_seconds,
             follow_redirects=False,
+            transport=transport,
         )
         try:
             yield
@@ -29,6 +35,7 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="TraceLens", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
     app.include_router(api_router)
+    app.include_router(proxy_router)
     return app
 
 
