@@ -29,13 +29,14 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-The backend supports Python $>=3.12,<3.15$. The proxy captures forwarded exchanges in a local SQLite database; trace and metrics APIs are the next implementation phase.
+The backend supports Python $>=3.12,<3.15$. TraceLens exposes local APIs for trace history and metrics; the React dashboard is the next implementation phase.
 
 ## V1
 
 - Async HTTP reverse proxy built with FastAPI and HTTPX
 - SQLite-backed capture of request method, path, status, timestamp, and duration
-- Trace APIs for listing, filtering, inspecting, and clearing traffic
+- Trace APIs for listing, filtering, inspecting, and clearing traffic: `GET /api/traces`, `GET /api/traces/{id}`, and `DELETE /api/traces`
+- Metrics API: `GET /api/metrics`
 - React and TypeScript dashboard for traffic metrics and trace details
 - Filters for endpoint, HTTP status, and latency
 - Safe capture defaults: local binding, sensitive-header redaction, and bounded text-body capture
@@ -84,4 +85,4 @@ Directories appear as their corresponding implementation phases begin. This keep
 
 ## Status
 
-Phase 3 complete: bounded and sanitized request/response capture with async SQLite persistence. Next: trace and metric REST APIs.
+Phase 4 complete: REST APIs for trace history, filtering, detail inspection, metrics, and clearing local data. Next: React dashboard.
