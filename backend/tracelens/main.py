@@ -10,7 +10,9 @@ from fastapi import FastAPI
 
 from tracelens.api.routes import router as api_router
 from tracelens.config import Settings, parse_args
+from tracelens.database.session import create_engine, create_session_factory, initialize_database
 from tracelens.proxy.routes import router as proxy_router
+from tracelens.services.traces import TraceService
 
 
 def create_app(
@@ -22,6 +24,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        database_engine = create_engine(settings.database_path)
+        await initialize_database(database_engine)
+        app.state.trace_service = TraceService(create_session_factory(database_engine))
         app.state.http_client = httpx.AsyncClient(
             timeout=settings.request_timeout_seconds,
             follow_redirects=False,
@@ -31,6 +36,7 @@ def create_app(
             yield
         finally:
             await app.state.http_client.aclose()
+            await database_engine.dispose()
 
     app = FastAPI(title="TraceLens", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings

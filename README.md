@@ -29,7 +29,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest
 ```
 
-The backend supports Python $>=3.12,<3.15$. The proxy forwards buffered HTTP requests; trace persistence is the next implementation phase.
+The backend supports Python $>=3.12,<3.15$. The proxy captures forwarded exchanges in a local SQLite database; trace and metrics APIs are the next implementation phase.
 
 ## V1
 
@@ -84,4 +84,4 @@ Directories appear as their corresponding implementation phases begin. This keep
 
 ## Status
 
-Phase 2 complete: HTTP request forwarding, upstream response translation, hop-by-hop header filtering, and gateway error handling. Next: trace capture and SQLite persistence.
+Phase 3 complete: bounded and sanitized request/response capture with async SQLite persistence. Next: trace and metric REST APIs.

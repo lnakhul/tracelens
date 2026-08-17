@@ -43,19 +43,25 @@ def filter_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str]:
     }
 
 
-async def forward_request(request: Request, client: httpx.AsyncClient, target_url: str) -> Response:
-    """Forward one buffered request and translate the upstream response for ASGI."""
+async def forward_request(
+    request: Request,
+    client: httpx.AsyncClient,
+    target_url: str,
+) -> tuple[Response, bytes, httpx.Response]:
+    """Forward one buffered request and return data needed to capture the exchange."""
 
+    request_body = await request.body()
     upstream_request = client.build_request(
         method=request.method,
         url=build_upstream_url(target_url, request),
         headers=filter_headers(request.headers.items()),
-        content=await request.body(),
+        content=request_body,
     )
     upstream_response = await client.send(upstream_request)
 
-    return Response(
+    response = Response(
         content=upstream_response.content,
         status_code=upstream_response.status_code,
         headers=filter_headers(upstream_response.headers.items()),
     )
+    return response, request_body, upstream_response

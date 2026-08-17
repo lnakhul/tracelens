@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_BIND_HOST = "127.0.0.1"
@@ -21,6 +22,7 @@ class Settings:
     bind_host: str = DEFAULT_BIND_HOST
     request_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_capture_body_bytes: int = DEFAULT_MAX_CAPTURE_BODY_BYTES
+    database_path: Path = Path("tracelens.db")
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "target_url", normalize_target_url(self.target_url))
