@@ -1,6 +1,7 @@
-import { AlertTriangle, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle, Sparkles, X } from 'lucide-react'
 
-import type { TraceDetail as TraceDetailType } from '../services/api'
+import { analyzeFailure, type FailureAnalysis, type TraceDetail as TraceDetailType } from '../services/api'
 
 type TraceDetailProps = {
     trace: TraceDetailType | null
@@ -26,7 +27,36 @@ function formatIncrease(ratio: number) {
 }
 
 export function TraceDetail({ trace, loading, onClose }: TraceDetailProps) {
+    const [consented, setConsented] = useState(false)
+    const [includeBodies, setIncludeBodies] = useState(false)
+    const [analysis, setAnalysis] = useState<FailureAnalysis | null>(null)
+    const [analysisError, setAnalysisError] = useState<string | null>(null)
+    const [analyzing, setAnalyzing] = useState(false)
+
+    useEffect(() => {
+        setConsented(false)
+        setIncludeBodies(false)
+        setAnalysis(null)
+        setAnalysisError(null)
+        setAnalyzing(false)
+    }, [trace?.id])
+
     if (!trace && !loading) return null
+
+    const isFailure = trace && ((trace.status_code !== null && trace.status_code >= 500) || trace.error_type !== null)
+
+    async function requestAnalysis() {
+        if (!trace || !consented) return
+        setAnalyzing(true)
+        setAnalysisError(null)
+        try {
+            setAnalysis(await analyzeFailure(trace.id, includeBodies))
+        } catch (error) {
+            setAnalysisError(error instanceof Error ? error.message : 'Analysis is unavailable.')
+        } finally {
+            setAnalyzing(false)
+        }
+    }
 
     return (
         <aside className="detail-panel" aria-label="Trace detail">
@@ -59,6 +89,22 @@ export function TraceDetail({ trace, loading, onClose }: TraceDetailProps) {
                 <div><dt>Query</dt><dd>{trace.query_string || 'None'}</dd></div>
                 <div><dt>Error</dt><dd>{trace.error_type || 'None'}</dd></div>
             </dl>
+
+            {isFailure && <section className="analysis-block">
+                <div className="analysis-heading"><div><p className="eyebrow">Failure analysis</p><h3>Investigate with AI</h3></div><Sparkles size={19} /></div>
+                {!analysis && <>
+                    <label className="consent-option"><input type="checkbox" checked={consented} onChange={(event) => setConsented(event.target.checked)} /> I consent to share this trace's sanitized metadata with my configured AI provider.</label>
+                    <label className="consent-option"><input type="checkbox" checked={includeBodies} disabled={!consented} onChange={(event) => setIncludeBodies(event.target.checked)} /> Include captured request and response bodies.</label>
+                    <button className="command-button" onClick={() => void requestAnalysis()} disabled={!consented || analyzing}>{analyzing ? 'Analyzing...' : 'Analyze failure'}</button>
+                    {analysisError && <p className="analysis-error">{analysisError}</p>}
+                </>}
+                {analysis && <div className="analysis-result">
+                    <div><h4>Likely cause</h4><p>{analysis.likely_cause}</p></div>
+                    <div><h4>Evidence</h4><ul>{analysis.evidence.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                    <div><h4>Suggested investigation</h4><p>{analysis.suggested_investigation}</p></div>
+                    <span>Analyzed with {analysis.model}</span>
+                </div>}
+            </section>}
 
             <DetailBlock title="Request headers" value={formatJson(trace.request_headers)} />
             <DetailBlock title="Request body" value={formatJson(trace.request_body)} />

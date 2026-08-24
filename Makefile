@@ -1,5 +1,6 @@
 TARGET ?= http://localhost:8000
 PORT ?= 9000
+BACKEND_ARGS ?=
 
 .PHONY: backend-install frontend-install test lint build backend frontend
 
@@ -20,7 +21,7 @@ build:
 	cd frontend && npm run build
 
 backend:
-	cd backend && .venv/bin/tracelens --target $(TARGET) --port $(PORT)
+	cd backend && .venv/bin/tracelens --target $(TARGET) --port $(PORT) $(BACKEND_ARGS)
 
 frontend:
 	cd frontend && npm run dev

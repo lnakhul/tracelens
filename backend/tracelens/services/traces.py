@@ -114,6 +114,24 @@ class TraceService:
             self._apply_anomaly_analysis(traces)
             return next((trace for trace in traces if trace.id == trace_id), None)
 
+    async def successful_comparisons(self, trace: Trace, limit: int = 5) -> list[Trace]:
+        """Return recent successful calls to the same endpoint for failure comparison."""
+
+        async with self._session_factory() as session:
+            statement = (
+                select(Trace)
+                .where(
+                    Trace.method == trace.method,
+                    Trace.path == trace.path,
+                    Trace.status_code.is_not(None),
+                    Trace.status_code < 500,
+                    Trace.id != trace.id,
+                )
+                .order_by(Trace.timestamp.desc(), Trace.id.desc())
+                .limit(limit)
+            )
+            return list((await session.scalars(statement)).all())
+
     async def metrics(self) -> TraceMetrics:
         """Calculate request, error-rate, latency average, and nearest-rank P95 metrics."""
 

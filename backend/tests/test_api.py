@@ -1,6 +1,8 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 
 from tracelens.config import Settings
@@ -150,3 +152,90 @@ def test_trace_api_flags_request_slower_than_endpoint_baseline(tmp_path: Path) -
     assert listed.json()["items"][1]["is_anomaly"] is False
     assert detail.status_code == 200
     assert detail.json()["is_anomaly"] is True
+
+
+def test_failure_analysis_requires_consent_and_uses_opted_in_context(tmp_path: Path) -> None:
+    def ai_handler(request: httpx.Request) -> httpx.Response:
+        shared_trace = json.loads(request.content)["messages"][1]["content"]
+        assert "request_body" not in shared_trace
+        assert request.headers["authorization"] == "Bearer test-key"
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"likely_cause":"Upstream failed",'
+                                '"evidence":["The trace returned 500"],'
+                                '"suggested_investigation":"Check upstream logs"}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    settings = Settings(
+        target_url="http://upstream.test",
+        database_path=tmp_path / "traces.db",
+        ai_endpoint="https://ai.example.test/v1/chat/completions",
+        ai_model="test-model",
+        ai_api_key="test-key",
+    )
+    with TestClient(create_app(settings, ai_transport=httpx.MockTransport(ai_handler))) as client:
+        trace_service = client.app.state.trace_service
+        client.portal.call(
+            trace_service.record,
+            trace_data(
+                timestamp=datetime(2026, 8, 17, tzinfo=UTC),
+                path="/orders",
+                status_code=500,
+                duration_ms=50,
+            ),
+        )
+        without_consent = client.post("/api/traces/1/analysis", json={"share_data": False})
+        analysis = client.post("/api/traces/1/analysis", json={"share_data": True})
+
+    assert without_consent.status_code == 403
+    assert analysis.status_code == 200
+    assert analysis.json() == {
+        "likely_cause": "Upstream failed",
+        "evidence": ["The trace returned 500"],
+        "suggested_investigation": "Check upstream logs",
+        "model": "test-model",
+        "data_shared": True,
+    }
+
+
+def test_failure_analysis_reports_sanitized_provider_rejection(tmp_path: Path) -> None:
+    settings = Settings(
+        target_url="http://upstream.test",
+        database_path=tmp_path / "traces.db",
+        ai_endpoint="https://ai.example.test/v1/chat/completions",
+        ai_model="test-model",
+        ai_api_key="test-key",
+    )
+    with TestClient(
+        create_app(
+            settings,
+            ai_transport=httpx.MockTransport(lambda _: httpx.Response(401)),
+        )
+    ) as client:
+        trace_service = client.app.state.trace_service
+        client.portal.call(
+            trace_service.record,
+            trace_data(
+                timestamp=datetime(2026, 8, 17, tzinfo=UTC),
+                path="/orders",
+                status_code=500,
+                duration_ms=50,
+            ),
+        )
+        response = client.post("/api/traces/1/analysis", json={"share_data": True})
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": "AI provider rejected the request (HTTP 401). "
+        "Check the API key, billing, and model access."
+    }

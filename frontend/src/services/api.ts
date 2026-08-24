@@ -26,6 +26,14 @@ export type Metrics = {
     p95_duration_ms: number
 }
 
+export type FailureAnalysis = {
+    likely_cause: string
+    evidence: string[]
+    suggested_investigation: string
+    model: string
+    data_shared: boolean
+}
+
 export type TraceFilters = {
     path: string
     statusCode: string
@@ -40,7 +48,8 @@ type TraceList = {
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
     const response = await fetch(url, init)
     if (!response.ok) {
-        throw new Error(`Request failed with ${response.status}`)
+        const payload = (await response.json().catch(() => null)) as { detail?: string } | null
+        throw new Error(payload?.detail ?? `Request failed with ${response.status}`)
     }
     return response.status === 204 ? (undefined as T) : ((await response.json()) as T)
 }
@@ -63,4 +72,15 @@ export function getMetrics(): Promise<Metrics> {
 
 export function clearTraces(): Promise<void> {
     return request<void>('/api/traces', { method: 'DELETE' })
+}
+
+export function analyzeFailure(
+    traceId: number,
+    includeBodies: boolean,
+): Promise<FailureAnalysis> {
+    return request<FailureAnalysis>(`/api/traces/${traceId}/analysis`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ share_data: true, include_bodies: includeBodies }),
+    })
 }

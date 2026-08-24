@@ -12,6 +12,7 @@ from tracelens.api.routes import router as api_router
 from tracelens.config import Settings, parse_args
 from tracelens.database.session import create_engine, create_session_factory, initialize_database
 from tracelens.proxy.routes import router as proxy_router
+from tracelens.services.failure_analysis import FailureAnalysisService
 from tracelens.services.traces import TraceService
 
 
@@ -19,6 +20,7 @@ def create_app(
     settings: Settings,
     *,
     transport: httpx.AsyncBaseTransport | None = None,
+    ai_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """Create an application configured for one local upstream target."""
 
@@ -32,10 +34,21 @@ def create_app(
             follow_redirects=False,
             transport=transport,
         )
+        app.state.failure_analysis_client = httpx.AsyncClient(
+            timeout=settings.request_timeout_seconds,
+            transport=ai_transport,
+        )
+        app.state.failure_analysis_service = FailureAnalysisService(
+            endpoint=settings.ai_endpoint,
+            api_key=settings.ai_api_key,
+            model=settings.ai_model,
+            http_client=app.state.failure_analysis_client,
+        )
         try:
             yield
         finally:
             await app.state.http_client.aclose()
+            await app.state.failure_analysis_client.aclose()
             await database_engine.dispose()
 
     app = FastAPI(title="TraceLens", version="0.1.0", lifespan=lifespan)

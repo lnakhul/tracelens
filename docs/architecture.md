@@ -19,7 +19,7 @@ TraceLens is a local HTTP observability proxy for developers. It forwards HTTP r
 - WebSockets, streaming responses, and HTTP/2-specific behavior.
 - Authentication, multi-user access, or remote deployment.
 - Distributed tracing and cross-service correlation.
-- Alert delivery and LLM analysis.
+- Alert delivery.
 - Docker packaging.
 
 ## System Architecture
@@ -149,6 +149,19 @@ Returns a paginated reverse-chronological list of trace summaries.
 
 Returns the full captured trace, including safely captured headers and bodies. Returns `404` when no trace exists.
 
+### `POST /api/traces/{trace_id}/analysis`
+
+Requests external AI analysis for one failed trace. Its body must include `share_data: true`; otherwise TraceLens returns `403` without contacting a provider. `include_bodies` defaults to `false` and requires separate opt-in.
+
+```json
+{
+  "share_data": true,
+  "include_bodies": false
+}
+```
+
+The endpoint returns `409` for non-failed traces, `503` when AI analysis has not been configured, and `502` for provider errors or invalid output.
+
 ### `GET /api/metrics`
 
 Returns metrics over the selected trace retention window. V1 computes these from SQLite on demand.
@@ -219,13 +232,16 @@ Proxy error responses use a small JSON body with a stable `detail` field. Intern
 - Do not capture multipart or binary request/response bodies in V1.
 - Capture JSON, text, and form bodies only when their content type is recognized and their size is within the configured limit.
 - Provide `DELETE /api/traces` as an immediate local purge.
+- Keep AI analysis disabled unless `--ai-endpoint`, `--ai-model`, and `TRACELENS_AI_API_KEY` are configured.
+- Require per-analysis consent before any trace data leaves the device. Request and response bodies need separate opt-in.
+- Send only the failed trace and up to five recent successful comparisons with the same method and path. Headers use redacted capture values; API keys are never persisted or exposed through management APIs.
 
 ## Frontend
 
 The React/TypeScript dashboard has two views:
 
 1. **Traffic**: request count, error rate, average latency, P95 latency, filters, a reverse-chronological trace table, and latency-anomaly signals.
-2. **Trace Detail**: method, path, status, duration, timestamp, request/response headers and bodies, error information, and an anomaly-to-baseline comparison when available.
+2. **Trace Detail**: method, path, status, duration, timestamp, request/response headers and bodies, error information, an anomaly-to-baseline comparison when available, and consent-gated analysis for failures.
 
 The dashboard polls `GET /api/traces` and `GET /api/metrics` every two seconds while the Traffic view is active. Detail is loaded on demand. Server-side filtering remains authoritative.
 
@@ -236,7 +252,7 @@ The dashboard polls `GET /api/traces` and `GET /api/metrics` every two seconds w
 | Proxy | Forwarding method/path/query/body, filtered headers, returned response, timeout and connection failures |
 | Capture | Sensitive-header redaction, content-type checks, and body-size limits |
 | Persistence | Trace creation, ordering, filtering, clear operation, and metric calculations |
-| API | Query validation, pagination, detail `404`, response schemas, clear endpoint, and endpoint latency anomaly detection |
+| API | Query validation, pagination, detail `404`, response schemas, clear endpoint, endpoint latency anomaly detection, consent gates, and provider response handling |
 | Frontend | Filter controls, table states, detail rendering, and API error states |
 
 Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClient`, a temporary SQLite database, and an HTTPX mock transport for deterministic upstream responses.
@@ -252,6 +268,7 @@ Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClie
 | Metrics | On-demand query calculation | Simple and correct for local volumes; pre-aggregation can come later |
 | Upstream errors | Preserve HTTP responses; synthesize gateway errors only for transport failures | Separates API failures from proxy failures |
 | UI updates | Two-second polling | Simple local-first behavior; WebSockets are deferred |
+| AI integration | OpenAI-compatible endpoint, explicit consent | Provider choice remains flexible; no data is sent without configuration and user approval |
 
 ## Delivery Plan
 
@@ -265,4 +282,4 @@ Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClie
 ## Roadmap
 
 - **V2:** endpoint latency baselines and slow-request anomaly detection.
-- **V3:** optional local or hosted LLM-powered failure analysis, with explicit data-sharing controls.
+- **V3:** optional OpenAI-compatible failure analysis, with explicit data-sharing controls.

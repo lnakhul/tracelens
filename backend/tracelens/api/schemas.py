@@ -52,6 +52,23 @@ class TraceDetailResponse(TraceSummaryResponse):
     response_body: str | None
 
 
+class FailureAnalysisRequest(BaseModel):
+    """Explicit acknowledgement required before any trace data leaves the device."""
+
+    share_data: bool
+    include_bodies: bool = False
+
+
+class FailureAnalysisResponse(BaseModel):
+    """Structured explanation returned from the configured analysis provider."""
+
+    likely_cause: str
+    evidence: list[str]
+    suggested_investigation: str
+    model: str
+    data_shared: bool
+
+
 class MetricsResponse(BaseModel):
     """Summary metrics over all locally retained traces."""
 

@@ -71,6 +71,7 @@ Vite proxies local `/api` requests to TraceLens on port `9000`.
 | `GET /api/health` | Confirm the local management API is running |
 | `GET /api/traces` | List traces, including endpoint latency analysis; filter by `path`, `status_code`, `min_duration_ms`, or `max_duration_ms` |
 | `GET /api/traces/{id}` | Inspect the complete captured exchange and its latency analysis |
+| `POST /api/traces/{id}/analysis` | Request explicitly consented external analysis for a failed trace |
 | `GET /api/metrics` | Get request count, error rate, average latency, and P95 latency |
 | `DELETE /api/traces` | Permanently clear locally stored trace history |
 
@@ -87,13 +88,25 @@ curl http://127.0.0.1:9000/api/metrics
 - Server-side filters for endpoint, HTTP status, and latency
 - Safe capture defaults: local binding, sensitive-header redaction, and bounded text-body capture
 
-TraceLens is deliberately a local developer tool. HTTPS interception, streaming, remote deployment, and AI analysis are deferred.
+TraceLens is deliberately a local developer tool. HTTPS interception, streaming, and remote deployment are deferred.
 
 ## V2: Latency Anomalies
 
 TraceLens derives a baseline from the five preceding traces with the same HTTP method and path. A request is marked as a latency anomaly when it takes at least twice that baseline. Analysis is calculated from locally retained traces when they are read, so it introduces no extra persisted data or migration.
 
 The trace list and detail APIs include `baseline_duration_ms`, `latency_increase_ratio`, and `is_anomaly`. The dashboard marks anomalous requests and shows the baseline comparison in trace detail.
+
+## V3: AI-Assisted Failure Analysis
+
+Failure analysis is disabled by default. Configure an OpenAI-compatible chat-completions endpoint, a model, and an API key to enable it:
+
+```bash
+export TRACELENS_AI_API_KEY='your-provider-key'
+make backend TARGET=http://localhost:8000 \
+  BACKEND_ARGS='--ai-endpoint https://api.openai.com/v1/chat/completions --ai-model gpt-4.1-mini'
+```
+
+For a failed trace, the dashboard requires an explicit consent checkbox before TraceLens contacts the provider. Captured request and response bodies are excluded by default and require a separate opt-in. TraceLens sends the failed trace plus up to five recent successful requests to the same method and path; captured headers have already passed through TraceLens header redaction. API keys remain in the process environment and are never stored in SQLite or returned by the API.
 
 ## Architecture
 
@@ -124,8 +137,8 @@ tracelens/
 
 - **V1:** local proxy, trace persistence, REST API, dashboard, CI, and documentation
 - **V2:** endpoint latency baselines and slow-request anomaly detection
-- **V3:** optional failure analysis with explicit data-sharing controls
+- **V3:** optional AI-assisted failure analysis with explicit data-sharing controls
 
 ## Status
 
-V2 complete. Next: optional AI-assisted failure analysis with explicit data-sharing controls.
+V3 complete. AI analysis is opt-in and disabled until a provider is configured.
