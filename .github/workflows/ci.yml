@@ -36,6 +36,9 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+      - name: Lint dashboard
+        working-directory: frontend
+        run: npm run lint
       - name: Build dashboard
         working-directory: frontend
         run: npm run build
