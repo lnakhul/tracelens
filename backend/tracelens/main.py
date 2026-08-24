@@ -43,6 +43,8 @@ def create_app(
             api_key=settings.ai_api_key,
             model=settings.ai_model,
             http_client=app.state.failure_analysis_client,
+            max_context_bytes=settings.ai_max_context_bytes,
+            max_retries=settings.ai_max_retries,
         )
         try:
             yield

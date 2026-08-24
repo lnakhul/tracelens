@@ -12,6 +12,8 @@ DEFAULT_BIND_HOST = "127.0.0.1"
 DEFAULT_PORT = 9000
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_CAPTURE_BODY_BYTES = 64 * 1024
+DEFAULT_AI_MAX_CONTEXT_BYTES = 24 * 1024
+DEFAULT_AI_MAX_RETRIES = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,6 +29,8 @@ class Settings:
     ai_endpoint: str | None = None
     ai_model: str | None = None
     ai_api_key: str | None = None
+    ai_max_context_bytes: int = DEFAULT_AI_MAX_CONTEXT_BYTES
+    ai_max_retries: int = DEFAULT_AI_MAX_RETRIES
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "target_url", normalize_target_url(self.target_url))
@@ -41,6 +45,10 @@ class Settings:
             raise ValueError("maximum capture body size cannot be negative")
         if (self.ai_endpoint is None) != (self.ai_model is None):
             raise ValueError("AI endpoint and model must be configured together")
+        if self.ai_max_context_bytes < 4 * 1024:
+            raise ValueError("AI context limit must be at least 4096 bytes")
+        if not 0 <= self.ai_max_retries <= 5:
+            raise ValueError("AI retry count must be between 0 and 5")
 
 
 def normalize_target_url(value: str) -> str:
@@ -70,6 +78,18 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
         help="OpenAI-compatible chat completions URL; analysis remains disabled when omitted",
     )
     parser.add_argument("--ai-model", help="Model name used with --ai-endpoint")
+    parser.add_argument(
+        "--ai-max-context-bytes",
+        type=int,
+        default=DEFAULT_AI_MAX_CONTEXT_BYTES,
+        help="Maximum serialized trace context shared with the AI provider",
+    )
+    parser.add_argument(
+        "--ai-max-retries",
+        type=int,
+        default=DEFAULT_AI_MAX_RETRIES,
+        help="Retry count for AI rate limits and transient transport failures",
+    )
 
     args = parser.parse_args(arguments)
     try:
@@ -79,6 +99,8 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
             ai_endpoint=args.ai_endpoint,
             ai_model=args.ai_model,
             ai_api_key=os.getenv("TRACELENS_AI_API_KEY"),
+            ai_max_context_bytes=args.ai_max_context_bytes,
+            ai_max_retries=args.ai_max_retries,
         )
     except ValueError as error:
         parser.error(str(error))

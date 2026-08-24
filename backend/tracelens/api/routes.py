@@ -1,6 +1,8 @@
 """Management API routes available under /api."""
 
+import logging
 from dataclasses import asdict
+from datetime import UTC, datetime
 from typing import Annotated
 
 import httpx
@@ -17,12 +19,14 @@ from tracelens.api.schemas import (
 )
 from tracelens.services.failure_analysis import (
     FailureAnalysisProviderError,
+    FailureAnalysisResponseError,
     FailureAnalysisService,
     FailureAnalysisUnavailableError,
 )
-from tracelens.services.traces import TraceService
+from tracelens.services.traces import FailureAnalysisAuditData, TraceService
 
 router = APIRouter(prefix="/api", tags=["management"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -105,21 +109,83 @@ async def analyze_trace_failure(
             include_bodies=analysis_request.include_bodies,
         )
     except FailureAnalysisUnavailableError:
+        await _record_analysis_audit(
+            trace_service, trace_id, analysis_request.include_bodies, None, "unavailable", None, 0
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI analysis is not configured",
         ) from None
     except FailureAnalysisProviderError as error:
+        await _record_analysis_audit(
+            trace_service,
+            trace_id,
+            analysis_request.include_bodies,
+            request.app.state.settings.ai_model,
+            "provider_error",
+            error.status_code,
+            error.attempt_count,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(error),
         ) from None
-    except (httpx.HTTPError, ValueError):
+    except FailureAnalysisResponseError as error:
+        await _record_analysis_audit(
+            trace_service,
+            trace_id,
+            analysis_request.include_bodies,
+            request.app.state.settings.ai_model,
+            "invalid_response",
+            None,
+            error.attempt_count,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from None
+    except httpx.HTTPError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI provider returned an invalid analysis response",
         ) from None
+    await _record_analysis_audit(
+        trace_service,
+        trace_id,
+        analysis_request.include_bodies,
+        analysis.model,
+        "success",
+        None,
+        analysis.attempt_count,
+    )
     return FailureAnalysisResponse(**asdict(analysis))
+
+
+async def _record_analysis_audit(
+    trace_service: TraceService,
+    trace_id: int,
+    include_bodies: bool,
+    model: str | None,
+    outcome: str,
+    provider_status_code: int | None,
+    attempt_count: int,
+) -> None:
+    """Persist non-sensitive analysis metadata without disrupting a provider response."""
+
+    try:
+        await trace_service.record_analysis_audit(
+            FailureAnalysisAuditData(
+                timestamp=datetime.now(UTC),
+                trace_id=trace_id,
+                model=model,
+                include_bodies=include_bodies,
+                outcome=outcome,
+                provider_status_code=provider_status_code,
+                attempt_count=attempt_count,
+            )
+        )
+    except Exception:
+        logger.exception("Unable to persist failure analysis audit")
 
 
 @router.get("/metrics", response_model=MetricsResponse)

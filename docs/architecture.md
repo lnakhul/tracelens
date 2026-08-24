@@ -235,6 +235,10 @@ Proxy error responses use a small JSON body with a stable `detail` field. Intern
 - Keep AI analysis disabled unless `--ai-endpoint`, `--ai-model`, and `TRACELENS_AI_API_KEY` are configured.
 - Require per-analysis consent before any trace data leaves the device. Request and response bodies need separate opt-in.
 - Send only the failed trace and up to five recent successful comparisons with the same method and path. Headers use redacted capture values; API keys are never persisted or exposed through management APIs.
+- Cap serialized AI context at `24 KiB` by default and truncate oversized captured fields before sharing. `--ai-max-context-bytes` must be at least `4096`.
+- Retry transient provider transport failures and `429 Too Many Requests` responses twice by default; `Retry-After` is honored with a two-second maximum delay. Configure retries with `--ai-max-retries` from `0` through `5`.
+- Request strict JSON-schema output from OpenAI-compatible providers and reject invalid structured responses.
+- Store a metadata-only audit row for each analysis action: timestamp, trace ID, model, body-sharing choice, outcome, provider status code, and attempt count. Prompts and analysis results are not persisted in audit storage.
 
 ## Frontend
 
@@ -269,6 +273,7 @@ Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClie
 | Upstream errors | Preserve HTTP responses; synthesize gateway errors only for transport failures | Separates API failures from proxy failures |
 | UI updates | Two-second polling | Simple local-first behavior; WebSockets are deferred |
 | AI integration | OpenAI-compatible endpoint, explicit consent | Provider choice remains flexible; no data is sent without configuration and user approval |
+| AI reliability | Bounded context, retry on transient failures, JSON schema | Limits data exposure and retry cost while keeping provider output machine-checkable |
 
 ## Delivery Plan
 

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -155,10 +156,18 @@ def test_trace_api_flags_request_slower_than_endpoint_baseline(tmp_path: Path) -
 
 
 def test_failure_analysis_requires_consent_and_uses_opted_in_context(tmp_path: Path) -> None:
+    attempts = 0
+
     def ai_handler(request: httpx.Request) -> httpx.Response:
-        shared_trace = json.loads(request.content)["messages"][1]["content"]
+        nonlocal attempts
+        attempts += 1
+        payload = json.loads(request.content)
+        shared_trace = payload["messages"][1]["content"]
         assert "request_body" not in shared_trace
         assert request.headers["authorization"] == "Bearer test-key"
+        assert payload["response_format"]["json_schema"]["strict"] is True
+        if attempts == 1:
+            return httpx.Response(429, headers={"retry-after": "0"})
         return httpx.Response(
             200,
             json={
@@ -187,15 +196,20 @@ def test_failure_analysis_requires_consent_and_uses_opted_in_context(tmp_path: P
         trace_service = client.app.state.trace_service
         client.portal.call(
             trace_service.record,
-            trace_data(
-                timestamp=datetime(2026, 8, 17, tzinfo=UTC),
-                path="/orders",
-                status_code=500,
-                duration_ms=50,
+            replace(
+                trace_data(
+                    timestamp=datetime(2026, 8, 17, tzinfo=UTC),
+                    path="/orders",
+                    status_code=500,
+                    duration_ms=50,
+                ),
+                request_headers="x" * 10_000,
+                response_headers="y" * 10_000,
             ),
         )
         without_consent = client.post("/api/traces/1/analysis", json={"share_data": False})
         analysis = client.post("/api/traces/1/analysis", json={"share_data": True})
+        audits = client.portal.call(trace_service.analysis_audits, 1)
 
     assert without_consent.status_code == 403
     assert analysis.status_code == 200
@@ -206,6 +220,11 @@ def test_failure_analysis_requires_consent_and_uses_opted_in_context(tmp_path: P
         "model": "test-model",
         "data_shared": True,
     }
+    assert attempts == 2
+    assert len(audits) == 1
+    assert audits[0].outcome == "success"
+    assert audits[0].attempt_count == 2
+    assert audits[0].include_bodies is False
 
 
 def test_failure_analysis_reports_sanitized_provider_rejection(tmp_path: Path) -> None:
@@ -233,9 +252,57 @@ def test_failure_analysis_reports_sanitized_provider_rejection(tmp_path: Path) -
             ),
         )
         response = client.post("/api/traces/1/analysis", json={"share_data": True})
+        audits = client.portal.call(trace_service.analysis_audits, 1)
 
     assert response.status_code == 502
     assert response.json() == {
         "detail": "AI provider rejected the request (HTTP 401). "
         "Check the API key, billing, and model access."
     }
+    assert len(audits) == 1
+    assert audits[0].outcome == "provider_error"
+    assert audits[0].provider_status_code == 401
+
+
+def test_failure_analysis_caps_shared_context(tmp_path: Path) -> None:
+    def ai_handler(request: httpx.Request) -> httpx.Response:
+        context = json.loads(request.content)["messages"][1]["content"]
+        assert len(context.encode("utf-8")) <= 4096
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                '{"likely_cause":"Unknown","evidence":[],'
+                                '"suggested_investigation":"Inspect the trace"}'
+                            )
+                        }
+                    }
+                ]
+            },
+        )
+
+    settings = Settings(
+        target_url="http://upstream.test",
+        database_path=tmp_path / "traces.db",
+        ai_endpoint="https://ai.example.test/v1/chat/completions",
+        ai_model="test-model",
+        ai_api_key="test-key",
+        ai_max_context_bytes=4096,
+    )
+    with TestClient(create_app(settings, ai_transport=httpx.MockTransport(ai_handler))) as client:
+        trace_service = client.app.state.trace_service
+        client.portal.call(
+            trace_service.record,
+            trace_data(
+                timestamp=datetime(2026, 8, 17, tzinfo=UTC),
+                path="/orders",
+                status_code=500,
+                duration_ms=50,
+            ),
+        )
+        response = client.post("/api/traces/1/analysis", json={"share_data": True})
+
+    assert response.status_code == 200

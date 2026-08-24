@@ -109,6 +109,8 @@ make backend TARGET=http://localhost:8000 \
 
 For a failed trace, the dashboard requires an explicit consent checkbox before TraceLens contacts the provider. Captured request and response bodies are excluded by default and require a separate opt-in. TraceLens sends the failed trace plus up to five recent successful requests to the same method and path; captured headers have already passed through TraceLens header redaction. API keys remain in the process environment and are never stored in SQLite or returned by the API.
 
+AI context is capped at `24 KiB` by default, with oversized captured fields truncated before sharing. TraceLens retries transient transport failures and `429` rate limits twice by default, using capped backoff. Configure the limits with `--ai-max-context-bytes` and `--ai-max-retries`. Provider responses must satisfy a strict JSON schema. Each analysis action records only local audit metadata: timestamp, trace ID, selected model, body-sharing choice, outcome, provider status, and attempt count. Prompts and analysis results are never written to the audit table.
+
 ## Architecture
 
 The full V1 implementation contract covers module boundaries, request lifecycle, data model, REST API, proxy behavior, failure handling, concurrency, privacy, testing, and architectural tradeoffs.

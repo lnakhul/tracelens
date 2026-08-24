@@ -8,7 +8,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from tracelens.database.models import Trace
+from tracelens.database.models import FailureAnalysisAudit, Trace
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +46,19 @@ class TraceMetrics:
     p95_duration_ms: float
 
 
+@dataclass(frozen=True, slots=True)
+class FailureAnalysisAuditData:
+    """Non-sensitive metadata recorded for one AI analysis action."""
+
+    timestamp: datetime
+    trace_id: int
+    model: str | None
+    include_bodies: bool
+    outcome: str
+    provider_status_code: int | None
+    attempt_count: int
+
+
 class TraceService:
     """Store captured exchanges independently of proxy request handling."""
 
@@ -61,6 +74,24 @@ class TraceService:
         async with self._session_factory() as session:
             session.add(Trace(**asdict(trace_data)))
             await session.commit()
+
+    async def record_analysis_audit(self, audit_data: FailureAnalysisAuditData) -> None:
+        """Persist metadata for an analysis action without retaining its prompt or result."""
+
+        async with self._session_factory() as session:
+            session.add(FailureAnalysisAudit(**asdict(audit_data)))
+            await session.commit()
+
+    async def analysis_audits(self, trace_id: int) -> list[FailureAnalysisAudit]:
+        """Return analysis audit metadata for one trace, newest first."""
+
+        async with self._session_factory() as session:
+            statement = (
+                select(FailureAnalysisAudit)
+                .where(FailureAnalysisAudit.trace_id == trace_id)
+                .order_by(FailureAnalysisAudit.timestamp.desc(), FailureAnalysisAudit.id.desc())
+            )
+            return list((await session.scalars(statement)).all())
 
     async def list(
         self,
