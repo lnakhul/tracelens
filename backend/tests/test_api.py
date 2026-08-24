@@ -11,9 +11,15 @@ from tracelens.main import create_app
 from tracelens.services.traces import TraceData
 
 
-def create_client(database_path: Path) -> TestClient:
+def create_client(database_path: Path, *, retention_hours: int | None = None) -> TestClient:
     return TestClient(
-        create_app(Settings(target_url="http://upstream.test", database_path=database_path))
+        create_app(
+            Settings(
+                target_url="http://upstream.test",
+                database_path=database_path,
+                retention_hours=retention_hours,
+            )
+        )
     )
 
 
@@ -125,6 +131,34 @@ def test_trace_api_rejects_invalid_pagination_and_latency_filters(tmp_path: Path
 
     assert invalid_limit.status_code == 422
     assert invalid_duration.status_code == 422
+
+
+def test_trace_api_deletes_one_trace_and_expired_traces(tmp_path: Path) -> None:
+    with create_client(tmp_path / "traces.db", retention_hours=1) as client:
+        trace_service = client.app.state.trace_service
+        timestamp = datetime.now(UTC)
+        client.portal.call(
+            trace_service.record,
+            trace_data(
+                timestamp=timestamp - timedelta(hours=2),
+                path="/expired",
+                status_code=200,
+                duration_ms=10,
+            ),
+        )
+        client.portal.call(
+            trace_service.record,
+            trace_data(timestamp=timestamp, path="/orders", status_code=500, duration_ms=50),
+        )
+
+        listed = client.get("/api/traces")
+    retained_trace_id = listed.json()["items"][0]["id"]
+    deleted = client.delete(f"/api/traces/{retained_trace_id}")
+    missing = client.delete(f"/api/traces/{retained_trace_id}")
+
+    assert [item["path"] for item in listed.json()["items"]] == ["/orders"]
+    assert deleted.status_code == 204
+    assert missing.status_code == 404
 
 
 def test_trace_api_flags_request_slower_than_endpoint_baseline(tmp_path: Path) -> None:

@@ -28,7 +28,10 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         database_engine = create_engine(settings.database_path)
         await initialize_database(database_engine)
-        app.state.trace_service = TraceService(create_session_factory(database_engine))
+        app.state.trace_service = TraceService(
+            create_session_factory(database_engine),
+            retention_hours=settings.retention_hours,
+        )
         app.state.http_client = httpx.AsyncClient(
             timeout=settings.request_timeout_seconds,
             follow_redirects=False,

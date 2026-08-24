@@ -31,6 +31,7 @@ class Settings:
     ai_api_key: str | None = None
     ai_max_context_bytes: int = DEFAULT_AI_MAX_CONTEXT_BYTES
     ai_max_retries: int = DEFAULT_AI_MAX_RETRIES
+    retention_hours: int | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "target_url", normalize_target_url(self.target_url))
@@ -49,6 +50,8 @@ class Settings:
             raise ValueError("AI context limit must be at least 4096 bytes")
         if not 0 <= self.ai_max_retries <= 5:
             raise ValueError("AI retry count must be between 0 and 5")
+        if self.retention_hours is not None and self.retention_hours < 1:
+            raise ValueError("retention period must be at least one hour")
 
 
 def normalize_target_url(value: str) -> str:
@@ -90,6 +93,11 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
         default=DEFAULT_AI_MAX_RETRIES,
         help="Retry count for AI rate limits and transient transport failures",
     )
+    parser.add_argument(
+        "--retention-hours",
+        type=int,
+        help="Automatically purge traces older than this period; disabled when omitted",
+    )
 
     args = parser.parse_args(arguments)
     try:
@@ -101,6 +109,7 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
             ai_api_key=os.getenv("TRACELENS_AI_API_KEY"),
             ai_max_context_bytes=args.ai_max_context_bytes,
             ai_max_retries=args.ai_max_retries,
+            retention_hours=args.retention_hours,
         )
     except ValueError as error:
         parser.error(str(error))

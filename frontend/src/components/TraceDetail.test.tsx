@@ -25,8 +25,16 @@ const failedTrace: TraceDetailType = {
   response_body: '{"detail":"Internal Server Error"}',
 }
 
-function renderDetail() {
-  return render(<TraceDetail trace={failedTrace} loading={false} onClose={vi.fn()} />)
+function renderDetail(onDelete = vi.fn()) {
+  render(
+    <TraceDetail
+      trace={failedTrace}
+      loading={false}
+      onClose={vi.fn()}
+      onDelete={onDelete}
+    />,
+  )
+  return onDelete
 }
 
 describe('TraceDetail failure analysis', () => {
@@ -55,6 +63,15 @@ describe('TraceDetail failure analysis', () => {
 
     expect(analyzeButton).toBeEnabled()
     expect(bodyOption).toBeEnabled()
+  })
+
+  it('delegates deletion of the selected trace to its parent', async () => {
+    const user = userEvent.setup()
+    const onDelete = renderDetail()
+
+    await user.click(screen.getByRole('button', { name: 'Delete trace' }))
+
+    expect(onDelete).toHaveBeenCalledWith(42)
   })
 
   it('renders the sanitized provider error', async () => {

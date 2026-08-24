@@ -72,6 +72,7 @@ Vite proxies local `/api` requests to TraceLens on port `9000`.
 | `GET /api/health` | Confirm the local management API is running |
 | `GET /api/traces` | List traces, including endpoint latency analysis; filter by `path`, `status_code`, `min_duration_ms`, or `max_duration_ms` |
 | `GET /api/traces/{id}` | Inspect the complete captured exchange and its latency analysis |
+| `DELETE /api/traces/{id}` | Permanently delete one trace and its local analysis audit metadata |
 | `POST /api/traces/{id}/analysis` | Request explicitly consented external analysis for a failed trace |
 | `GET /api/metrics` | Get request count, error rate, average latency, and P95 latency |
 | `DELETE /api/traces` | Permanently clear locally stored trace history |
@@ -80,6 +81,16 @@ Vite proxies local `/api` requests to TraceLens on port `9000`.
 curl 'http://127.0.0.1:9000/api/traces?status_code=500&min_duration_ms=300'
 curl http://127.0.0.1:9000/api/metrics
 ```
+
+## Retention and Deletion
+
+TraceLens retains captured traces until you clear or delete them by default. Enable automatic pruning with a positive `--retention-hours` value; pruning runs when a new trace is captured and removes the expired trace plus its metadata-only AI analysis audits.
+
+```bash
+make backend TARGET=http://localhost:8000 BACKEND_ARGS='--retention-hours 168'
+```
+
+Use the dashboard detail panel to delete one trace, or `DELETE /api/traces` to purge all local history.
 
 ## V1
 

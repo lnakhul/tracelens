@@ -74,6 +74,10 @@ export function clearTraces(): Promise<void> {
     return request<void>('/api/traces', { method: 'DELETE' })
 }
 
+export function deleteTrace(traceId: number): Promise<void> {
+    return request<void>(`/api/traces/${traceId}`, { method: 'DELETE' })
+}
+
 export function analyzeFailure(
     traceId: number,
     includeBodies: boolean,

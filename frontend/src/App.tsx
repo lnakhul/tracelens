@@ -5,6 +5,7 @@ import { MetricCard } from './components/MetricCard'
 import { TraceDetail } from './components/TraceDetail'
 import {
   clearTraces,
+  deleteTrace,
   getMetrics,
   getTrace,
   getTraces,
@@ -74,6 +75,17 @@ function App() {
     await loadData()
   }
 
+  async function deleteSelectedTrace(traceId: number) {
+    if (!window.confirm('Delete this trace and its local analysis audit metadata?')) return
+    try {
+      await deleteTrace(traceId)
+      setSelectedTrace(null)
+      await loadData()
+    } catch {
+      setError('That trace could not be deleted.')
+    }
+  }
+
   const filterActive = Object.values(filters).some(Boolean)
   const anomalyCount = traces.filter((trace) => trace.is_anomaly).length
 
@@ -130,7 +142,7 @@ function App() {
         </section>
       </section>
 
-      <TraceDetail trace={selectedTrace} loading={loadingDetail} onClose={() => { setSelectedTrace(null); setLoadingDetail(false) }} />
+      <TraceDetail trace={selectedTrace} loading={loadingDetail} onClose={() => { setSelectedTrace(null); setLoadingDetail(false) }} onDelete={(traceId) => void deleteSelectedTrace(traceId)} />
     </main>
   )
 }

@@ -20,6 +20,13 @@ def test_settings_reject_invalid_target_url(target_url: str) -> None:
 
 
 def test_parse_args_reads_target_and_port() -> None:
-    settings = parse_args(["--target", "http://localhost:8000", "--port", "9010"])
+    settings = parse_args(
+        ["--target", "http://localhost:8000", "--port", "9010", "--retention-hours", "24"]
+    )
 
-    assert settings == Settings(target_url="http://localhost:8000", port=9010)
+    assert settings == Settings(target_url="http://localhost:8000", port=9010, retention_hours=24)
+
+
+def test_settings_reject_non_positive_retention_period() -> None:
+    with pytest.raises(ValueError, match="retention"):
+        Settings(target_url="http://upstream.test", retention_hours=0)

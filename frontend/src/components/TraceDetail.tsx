@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, Sparkles, Trash2, X } from 'lucide-react'
 
 import { analyzeFailure, type FailureAnalysis, type TraceDetail as TraceDetailType } from '../services/api'
 
@@ -7,6 +7,7 @@ type TraceDetailProps = {
     trace: TraceDetailType | null
     loading: boolean
     onClose: () => void
+    onDelete: (traceId: number) => void
 }
 
 function formatJson(value: string | null) {
@@ -26,7 +27,7 @@ function formatIncrease(ratio: number) {
     return `+${Math.round((ratio - 1) * 100)}%`
 }
 
-export function TraceDetail({ trace, loading, onClose }: TraceDetailProps) {
+export function TraceDetail({ trace, loading, onClose, onDelete }: TraceDetailProps) {
     const [consented, setConsented] = useState(false)
     const [includeBodies, setIncludeBodies] = useState(false)
     const [analysis, setAnalysis] = useState<FailureAnalysis | null>(null)
@@ -79,6 +80,9 @@ export function TraceDetail({ trace, loading, onClose }: TraceDetailProps) {
                 </span>
                 <strong>{formatDuration(trace.duration_ms)}</strong>
             </div>
+            <button className="text-button delete-trace" onClick={() => onDelete(trace.id)}>
+                <Trash2 size={14} /> Delete trace
+            </button>
 
             {trace.is_anomaly && trace.baseline_duration_ms !== null && trace.latency_increase_ratio !== null && (
                 <div className="anomaly-detail"><AlertTriangle size={17} /><span>Latency anomaly: {formatDuration(trace.duration_ms)} vs {formatDuration(trace.baseline_duration_ms)} baseline ({formatIncrease(trace.latency_increase_ratio)})</span></div>

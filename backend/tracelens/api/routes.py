@@ -78,6 +78,16 @@ async def get_trace(request: Request, trace_id: int) -> TraceDetailResponse:
     return TraceDetailResponse.model_validate(trace, from_attributes=True)
 
 
+@router.delete("/traces/{trace_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_trace(request: Request, trace_id: int) -> Response:
+    """Permanently delete one captured trace and its local analysis audit metadata."""
+
+    trace_service: TraceService = request.app.state.trace_service
+    if not await trace_service.delete(trace_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trace not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/traces/{trace_id}/analysis", response_model=FailureAnalysisResponse)
 async def analyze_trace_failure(
     request: Request,

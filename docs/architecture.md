@@ -162,6 +162,10 @@ Requests external AI analysis for one failed trace. Its body must include `share
 
 The endpoint returns `409` for non-failed traces, `503` when AI analysis has not been configured, and `502` for provider errors or invalid output.
 
+### `DELETE /api/traces/{trace_id}`
+
+Permanently deletes one trace and all associated metadata-only AI analysis audit records. Returns `204 No Content`, or `404` when the trace does not exist.
+
 ### `GET /api/metrics`
 
 Returns metrics over the selected trace retention window. V1 computes these from SQLite on demand.
@@ -232,6 +236,7 @@ Proxy error responses use a small JSON body with a stable `detail` field. Intern
 - Do not capture multipart or binary request/response bodies in V1.
 - Capture JSON, text, and form bodies only when their content type is recognized and their size is within the configured limit.
 - Provide `DELETE /api/traces` as an immediate local purge.
+- Retain traces until explicit deletion by default. `--retention-hours` enables automatic pruning when a new trace is recorded; expired traces and their local analysis audit metadata are deleted together.
 - Keep AI analysis disabled unless `--ai-endpoint`, `--ai-model`, and `TRACELENS_AI_API_KEY` are configured.
 - Require per-analysis consent before any trace data leaves the device. Request and response bodies need separate opt-in.
 - Send only the failed trace and up to five recent successful comparisons with the same method and path. Headers use redacted capture values; API keys are never persisted or exposed through management APIs.

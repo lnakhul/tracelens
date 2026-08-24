@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -65,14 +65,22 @@ class TraceService:
     _MIN_BASELINE_SAMPLES = 5
     _ANOMALY_MULTIPLIER = 2.0
 
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        *,
+        retention_hours: int | None = None,
+    ) -> None:
         self._session_factory = session_factory
+        self._retention_hours = retention_hours
 
     async def record(self, trace_data: TraceData) -> None:
         """Persist a captured trace in its own short-lived database session."""
 
         async with self._session_factory() as session:
             session.add(Trace(**asdict(trace_data)))
+            if self._retention_hours is not None:
+                await self._purge_expired(session)
             await session.commit()
 
     async def record_analysis_audit(self, audit_data: FailureAnalysisAuditData) -> None:
@@ -195,8 +203,34 @@ class TraceService:
         """Delete all traces from local storage."""
 
         async with self._session_factory() as session:
+            await session.execute(delete(FailureAnalysisAudit))
             await session.execute(delete(Trace))
             await session.commit()
+
+    async def delete(self, trace_id: int) -> bool:
+        """Delete one trace and all of its local analysis audit metadata."""
+
+        async with self._session_factory() as session:
+            result = await session.execute(delete(Trace).where(Trace.id == trace_id))
+            if not result.rowcount:
+                return False
+            await session.execute(
+                delete(FailureAnalysisAudit).where(FailureAnalysisAudit.trace_id == trace_id)
+            )
+            await session.commit()
+            return True
+
+    async def _purge_expired(self, session: AsyncSession) -> None:
+        """Remove expired traces and their metadata-only analysis audits in one transaction."""
+
+        if self._retention_hours is None:
+            return
+        cutoff = datetime.now(UTC) - timedelta(hours=self._retention_hours)
+        expired_trace_ids = select(Trace.id).where(Trace.timestamp < cutoff)
+        await session.execute(
+            delete(FailureAnalysisAudit).where(FailureAnalysisAudit.trace_id.in_(expired_trace_ids))
+        )
+        await session.execute(delete(Trace).where(Trace.timestamp < cutoff))
 
     @staticmethod
     def _filters(
