@@ -42,6 +42,7 @@ The `Makefile` provides the common commands:
 | Command | Purpose |
 | --- | --- |
 | `make test` | Run the backend test suite |
+| `make frontend-test` | Run the dashboard test suite |
 | `make lint` | Lint the backend and dashboard |
 | `make build` | Produce a dashboard production build |
 | `make backend TARGET=http://localhost:8000` | Start the local proxy |
@@ -116,7 +117,7 @@ Read [the V1 architecture](docs/architecture.md#L1).
 
 ## Quality Gates
 
-GitHub Actions runs backend tests and Ruff checks on Python 3.12, plus a production dashboard build on Node.js 20, for every pull request and push to `main`.
+GitHub Actions runs backend tests and Ruff checks on Python 3.12, plus dashboard tests, linting, and a production build on Node.js 20, for every pull request and push to `main`.
 
 ## Repository Layout
 

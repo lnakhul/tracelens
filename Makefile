@@ -2,7 +2,7 @@ TARGET ?= http://localhost:8000
 PORT ?= 9000
 BACKEND_ARGS ?=
 
-.PHONY: backend-install frontend-install test lint build backend frontend
+.PHONY: backend-install frontend-install test frontend-test lint build backend frontend
 
 backend-install:
 	cd backend && python3 -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'
@@ -12,6 +12,9 @@ frontend-install:
 
 test:
 	cd backend && .venv/bin/python -m pytest
+
+frontend-test:
+	cd frontend && npm run test
 
 lint:
 	cd backend && .venv/bin/python -m ruff check .
