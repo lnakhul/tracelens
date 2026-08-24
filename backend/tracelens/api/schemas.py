@@ -21,6 +21,9 @@ class TraceSummaryResponse(BaseModel):
     status_code: int | None
     duration_ms: float
     error_type: str | None
+    baseline_duration_ms: float | None = None
+    latency_increase_ratio: float | None = None
+    is_anomaly: bool = False
 
     @field_validator("timestamp", mode="before")
     @classmethod

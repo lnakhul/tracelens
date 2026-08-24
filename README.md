@@ -69,8 +69,8 @@ Vite proxies local `/api` requests to TraceLens on port `9000`.
 | Endpoint | Description |
 | --- | --- |
 | `GET /api/health` | Confirm the local management API is running |
-| `GET /api/traces` | List traces; filter by `path`, `status_code`, `min_duration_ms`, or `max_duration_ms` |
-| `GET /api/traces/{id}` | Inspect the complete captured exchange |
+| `GET /api/traces` | List traces, including endpoint latency analysis; filter by `path`, `status_code`, `min_duration_ms`, or `max_duration_ms` |
+| `GET /api/traces/{id}` | Inspect the complete captured exchange and its latency analysis |
 | `GET /api/metrics` | Get request count, error rate, average latency, and P95 latency |
 | `DELETE /api/traces` | Permanently clear locally stored trace history |
 
@@ -87,7 +87,13 @@ curl http://127.0.0.1:9000/api/metrics
 - Server-side filters for endpoint, HTTP status, and latency
 - Safe capture defaults: local binding, sensitive-header redaction, and bounded text-body capture
 
-V1 is deliberately a local developer tool. HTTPS interception, streaming, remote deployment, anomaly detection, and AI analysis are deferred.
+TraceLens is deliberately a local developer tool. HTTPS interception, streaming, remote deployment, and AI analysis are deferred.
+
+## V2: Latency Anomalies
+
+TraceLens derives a baseline from the five preceding traces with the same HTTP method and path. A request is marked as a latency anomaly when it takes at least twice that baseline. Analysis is calculated from locally retained traces when they are read, so it introduces no extra persisted data or migration.
+
+The trace list and detail APIs include `baseline_duration_ms`, `latency_increase_ratio`, and `is_anomaly`. The dashboard marks anomalous requests and shows the baseline comparison in trace detail.
 
 ## Architecture
 
@@ -122,4 +128,4 @@ tracelens/
 
 ## Status
 
-V1 complete. Next: V2 anomaly detection.
+V2 complete. Next: optional AI-assisted failure analysis with explicit data-sharing controls.

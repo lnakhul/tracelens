@@ -77,6 +77,9 @@ def test_trace_api_lists_filters_details_metrics_and_clears(tmp_path: Path) -> N
                 "status_code": None,
                 "duration_ms": 90.0,
                 "error_type": "timeout",
+                "baseline_duration_ms": None,
+                "latency_increase_ratio": None,
+                "is_anomaly": False,
             },
             {
                 "id": 2,
@@ -86,6 +89,9 @@ def test_trace_api_lists_filters_details_metrics_and_clears(tmp_path: Path) -> N
                 "status_code": 500,
                 "duration_ms": 50.0,
                 "error_type": None,
+                "baseline_duration_ms": None,
+                "latency_increase_ratio": None,
+                "is_anomaly": False,
             },
         ],
         "total": 2,
@@ -116,3 +122,31 @@ def test_trace_api_rejects_invalid_pagination_and_latency_filters(tmp_path: Path
 
     assert invalid_limit.status_code == 422
     assert invalid_duration.status_code == 422
+
+
+def test_trace_api_flags_request_slower_than_endpoint_baseline(tmp_path: Path) -> None:
+    with create_client(tmp_path / "traces.db") as client:
+        trace_service = client.app.state.trace_service
+        timestamp = datetime(2026, 8, 17, tzinfo=UTC)
+        for index, duration_ms in enumerate((100, 110, 90, 100, 100, 250)):
+            client.portal.call(
+                trace_service.record,
+                trace_data(
+                    timestamp=timestamp + timedelta(seconds=index),
+                    path="/orders",
+                    status_code=200,
+                    duration_ms=duration_ms,
+                ),
+            )
+
+        listed = client.get("/api/traces")
+        detail = client.get("/api/traces/6")
+
+    assert listed.status_code == 200
+    slow_trace = listed.json()["items"][0]
+    assert slow_trace["baseline_duration_ms"] == 100.0
+    assert slow_trace["latency_increase_ratio"] == 2.5
+    assert slow_trace["is_anomaly"] is True
+    assert listed.json()["items"][1]["is_anomaly"] is False
+    assert detail.status_code == 200
+    assert detail.json()["is_anomaly"] is True

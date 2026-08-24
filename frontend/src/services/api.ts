@@ -6,6 +6,9 @@ export type TraceSummary = {
     status_code: number | null
     duration_ms: number
     error_type: string | null
+    baseline_duration_ms: number | null
+    latency_increase_ratio: number | null
+    is_anomaly: boolean
 }
 
 export type TraceDetail = TraceSummary & {

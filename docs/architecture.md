@@ -1,4 +1,4 @@
-# TraceLens V1 Architecture
+# TraceLens Architecture
 
 TraceLens is a local HTTP observability proxy for developers. It forwards HTTP requests to a target API, records metadata about each exchange, and exposes a dashboard-friendly REST API for inspecting traffic, failures, and latency.
 
@@ -19,7 +19,7 @@ TraceLens is a local HTTP observability proxy for developers. It forwards HTTP r
 - WebSockets, streaming responses, and HTTP/2-specific behavior.
 - Authentication, multi-user access, or remote deployment.
 - Distributed tracing and cross-service correlation.
-- Alert delivery, anomaly detection, and LLM analysis.
+- Alert delivery and LLM analysis.
 - Docker packaging.
 
 ## System Architecture
@@ -133,7 +133,10 @@ Returns a paginated reverse-chronological list of trace summaries.
       "path": "/users/42",
       "status_code": 200,
       "duration_ms": 84.2,
-      "error_type": null
+      "error_type": null,
+      "baseline_duration_ms": 42.1,
+      "latency_increase_ratio": 2.0,
+      "is_anomaly": true
     }
   ],
   "total": 1284,
@@ -160,6 +163,14 @@ Returns metrics over the selected trace retention window. V1 computes these from
 ```
 
 An error is any trace with a `5xx` status or non-null `error_type`. P95 is computed from the nearest-rank percentile of recorded durations.
+
+## V2 Latency Anomaly Detection
+
+TraceLens calculates endpoint latency analysis at read time; it does not modify the `traces` table. An endpoint is the combination of request method and path. For each trace, the baseline is the mean duration of its five or more preceding traces for that endpoint, ordered by timestamp and ID. The current trace is excluded from its own baseline.
+
+A trace is anomalous when its duration is at least twice the baseline. `baseline_duration_ms` and `latency_increase_ratio` are `null` until enough history exists. `is_anomaly` is always a boolean. The dashboard adds a visible anomaly signal to the traffic table and shows the precise observed-versus-baseline comparison in trace detail.
+
+This approach is intentionally transparent and deterministic for local development. It may be replaced with rolling windows or distribution-aware thresholds when retention size and traffic volume justify more complex analysis.
 
 ### `DELETE /api/traces`
 
@@ -209,12 +220,12 @@ Proxy error responses use a small JSON body with a stable `detail` field. Intern
 - Capture JSON, text, and form bodies only when their content type is recognized and their size is within the configured limit.
 - Provide `DELETE /api/traces` as an immediate local purge.
 
-## Frontend V1
+## Frontend
 
 The React/TypeScript dashboard has two views:
 
-1. **Traffic**: request count, error rate, average latency, P95 latency, filters, and a reverse-chronological trace table.
-2. **Trace Detail**: method, path, status, duration, timestamp, request/response headers and bodies, and error information.
+1. **Traffic**: request count, error rate, average latency, P95 latency, filters, a reverse-chronological trace table, and latency-anomaly signals.
+2. **Trace Detail**: method, path, status, duration, timestamp, request/response headers and bodies, error information, and an anomaly-to-baseline comparison when available.
 
 The dashboard polls `GET /api/traces` and `GET /api/metrics` every two seconds while the Traffic view is active. Detail is loaded on demand. Server-side filtering remains authoritative.
 
@@ -225,7 +236,7 @@ The dashboard polls `GET /api/traces` and `GET /api/metrics` every two seconds w
 | Proxy | Forwarding method/path/query/body, filtered headers, returned response, timeout and connection failures |
 | Capture | Sensitive-header redaction, content-type checks, and body-size limits |
 | Persistence | Trace creation, ordering, filtering, clear operation, and metric calculations |
-| API | Query validation, pagination, detail `404`, response schemas, and clear endpoint |
+| API | Query validation, pagination, detail `404`, response schemas, clear endpoint, and endpoint latency anomaly detection |
 | Frontend | Filter controls, table states, detail rendering, and API error states |
 
 Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClient`, a temporary SQLite database, and an HTTPX mock transport for deterministic upstream responses.

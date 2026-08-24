@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, RefreshCw, Trash2 } from 'lucide-react'
+import { Activity, AlertTriangle, RefreshCw, Trash2 } from 'lucide-react'
 
 import { MetricCard } from './components/MetricCard'
 import { TraceDetail } from './components/TraceDetail'
@@ -75,6 +75,7 @@ function App() {
   }
 
   const filterActive = Object.values(filters).some(Boolean)
+  const anomalyCount = traces.filter((trace) => trace.is_anomaly).length
 
   return (
     <main className="app-shell">
@@ -112,6 +113,7 @@ function App() {
         <section className="traffic-panel">
           <div className="panel-heading">
             <div><h2>Recent requests</h2><span>{loading ? 'Connecting...' : `${traces.length} visible traces`}</span></div>
+            {!!anomalyCount && <span className="anomaly-summary"><AlertTriangle size={14} /> {anomalyCount} {anomalyCount === 1 ? 'latency anomaly' : 'latency anomalies'}</span>}
             <span className="refresh-note">Refreshes every 2 seconds</span>
           </div>
 
@@ -124,7 +126,7 @@ function App() {
 
           {error && <p className="error-state">{error}</p>}
           {!error && !loading && !traces.length && <div className="empty-state"><Activity size={26} /><h3>No traffic captured yet</h3><p>Send a request through TraceLens to see it appear here.</p></div>}
-          {!!traces.length && <div className="table-wrap"><table><thead><tr><th>Method</th><th>Endpoint</th><th>Status</th><th>Duration</th><th>Time</th></tr></thead><tbody>{traces.map((trace) => <tr key={trace.id} onClick={() => void selectTrace(trace.id)}><td><span className="method-badge">{trace.method}</span></td><td className="path-cell">{trace.path}</td><td><span className={`status status-${Math.floor((trace.status_code ?? 0) / 100)}`}>{trace.status_code ?? trace.error_type ?? 'Failed'}</span></td><td className={trace.duration_ms > 500 ? 'slow' : ''}>{formatDuration(trace.duration_ms)}</td><td>{formatTime(trace.timestamp)}</td></tr>)}</tbody></table></div>}
+          {!!traces.length && <div className="table-wrap"><table><thead><tr><th>Method</th><th>Endpoint</th><th>Status</th><th>Duration</th><th>Signal</th><th>Time</th></tr></thead><tbody>{traces.map((trace) => <tr key={trace.id} onClick={() => void selectTrace(trace.id)}><td><span className="method-badge">{trace.method}</span></td><td className="path-cell">{trace.path}</td><td><span className={`status status-${Math.floor((trace.status_code ?? 0) / 100)}`}>{trace.status_code ?? trace.error_type ?? 'Failed'}</span></td><td className={trace.is_anomaly ? 'slow' : ''}>{formatDuration(trace.duration_ms)}</td><td>{trace.is_anomaly && <span className="anomaly-icon" title="Latency anomaly"><AlertTriangle size={15} /><span className="sr-only">Latency anomaly</span></span>}</td><td>{formatTime(trace.timestamp)}</td></tr>)}</tbody></table></div>}
         </section>
       </section>
 

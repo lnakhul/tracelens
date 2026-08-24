@@ -1,4 +1,4 @@
-import { X } from 'lucide-react'
+import { AlertTriangle, X } from 'lucide-react'
 
 import type { TraceDetail as TraceDetailType } from '../services/api'
 
@@ -21,6 +21,10 @@ function formatDuration(duration: number) {
     return `${Math.round(duration)} ms`
 }
 
+function formatIncrease(ratio: number) {
+    return `+${Math.round((ratio - 1) * 100)}%`
+}
+
 export function TraceDetail({ trace, loading, onClose }: TraceDetailProps) {
     if (!trace && !loading) return null
 
@@ -38,13 +42,17 @@ export function TraceDetail({ trace, loading, onClose }: TraceDetailProps) {
 
         {trace && (
             <div className="detail-content">
-            <div className="trace-callout">
+            <div className={`trace-callout ${trace.is_anomaly ? 'anomaly-callout' : ''}`}>
                 <span className="method-badge">{trace.method}</span>
                 <span className={`status status-${Math.floor((trace.status_code ?? 0) / 100)}`}>
                 {trace.status_code ?? trace.error_type ?? 'Failed'}
                 </span>
                 <strong>{formatDuration(trace.duration_ms)}</strong>
             </div>
+
+            {trace.is_anomaly && trace.baseline_duration_ms !== null && trace.latency_increase_ratio !== null && (
+                <div className="anomaly-detail"><AlertTriangle size={17} /><span>Latency anomaly: {formatDuration(trace.duration_ms)} vs {formatDuration(trace.baseline_duration_ms)} baseline ({formatIncrease(trace.latency_increase_ratio)})</span></div>
+            )}
 
             <dl className="trace-meta">
                 <div><dt>Timestamp</dt><dd>{new Date(trace.timestamp).toLocaleString()}</dd></div>

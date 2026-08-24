@@ -49,6 +49,9 @@ class TraceMetrics:
 class TraceService:
     """Store captured exchanges independently of proxy request handling."""
 
+    _MIN_BASELINE_SAMPLES = 5
+    _ANOMALY_MULTIPLIER = 2.0
+
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 
@@ -79,6 +82,13 @@ class TraceService:
         )
         async with self._session_factory() as session:
             total = await session.scalar(select(func.count()).select_from(Trace).where(*filters))
+            all_traces = list(
+                (
+                    await session.scalars(
+                        select(Trace).order_by(Trace.timestamp.asc(), Trace.id.asc())
+                    )
+                ).all()
+            )
             statement = (
                 select(Trace)
                 .where(*filters)
@@ -87,13 +97,22 @@ class TraceService:
                 .limit(limit)
             )
             items = list((await session.scalars(statement)).all())
+            self._apply_anomaly_analysis(all_traces)
         return TracePage(items=items, total=total or 0)
 
     async def get(self, trace_id: int) -> Trace | None:
         """Return one complete trace, if it exists."""
 
         async with self._session_factory() as session:
-            return await session.get(Trace, trace_id)
+            traces = list(
+                (
+                    await session.scalars(
+                        select(Trace).order_by(Trace.timestamp.asc(), Trace.id.asc())
+                    )
+                ).all()
+            )
+            self._apply_anomaly_analysis(traces)
+            return next((trace for trace in traces if trace.id == trace_id), None)
 
     async def metrics(self) -> TraceMetrics:
         """Calculate request, error-rate, latency average, and nearest-rank P95 metrics."""
@@ -148,3 +167,29 @@ class TraceService:
         if max_duration_ms is not None:
             filters.append(Trace.duration_ms <= max_duration_ms)
         return filters
+
+    @classmethod
+    def _apply_anomaly_analysis(cls, traces: list[Trace]) -> None:
+        """Attach latency analysis based on earlier calls to the same endpoint."""
+
+        prior_durations: dict[tuple[str, str], list[float]] = {}
+        for trace in traces:
+            endpoint = (trace.method, trace.path)
+            baseline_samples = prior_durations.setdefault(endpoint, [])
+            baseline_duration_ms = (
+                sum(baseline_samples) / len(baseline_samples)
+                if len(baseline_samples) >= cls._MIN_BASELINE_SAMPLES
+                else None
+            )
+            latency_increase_ratio = (
+                trace.duration_ms / baseline_duration_ms
+                if baseline_duration_ms and baseline_duration_ms > 0
+                else None
+            )
+            trace.baseline_duration_ms = baseline_duration_ms
+            trace.latency_increase_ratio = latency_increase_ratio
+            trace.is_anomaly = (
+                latency_increase_ratio is not None
+                and latency_increase_ratio >= cls._ANOMALY_MULTIPLIER
+            )
+            baseline_samples.append(trace.duration_ms)
