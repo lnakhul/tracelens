@@ -49,6 +49,22 @@ It starts a local upstream API on port `8000`, TraceLens on port `9000`, seeds s
 
 Run the upstream API alone with `make demo-api` when integrating TraceLens manually. The API exposes `GET /users/{id}`, `GET /reports/daily?slow=true`, and `POST /orders`; omit `customer_id` from an order to create a deterministic `500` response.
 
+## Docker Demo
+
+Docker Desktop with Docker Compose is the only additional prerequisite. Run the complete evaluation environment with:
+
+```bash
+make docker-demo
+```
+
+Compose builds and starts the demo upstream, TraceLens, a production dashboard served by Nginx, and a one-shot traffic seeder. Open `http://127.0.0.1:5173` after the services are ready. The proxy management API is also available at `http://127.0.0.1:9000`. Both ports are published only to the local machine.
+
+The SQLite database persists in the `tracelens-data` Docker volume, so traffic remains available across `docker compose down` and the next `make docker-demo`. Stop services with `make docker-down`. To remove all containerized traces and images created by the stack, run:
+
+```bash
+docker compose down --volumes --rmi local
+```
+
 ## Development
 
 The `Makefile` provides the common commands:
@@ -63,6 +79,8 @@ The `Makefile` provides the common commands:
 | `make frontend` | Start the dashboard development server |
 | `make demo` | Start the demo upstream, proxy, seed traffic, and dashboard |
 | `make demo-api` | Start only the demo upstream API |
+| `make docker-demo` | Build and start the containerized demo environment |
+| `make docker-down` | Stop the containerized demo environment |
 
 To run without `make`:
 

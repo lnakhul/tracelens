@@ -2,7 +2,7 @@ TARGET ?= http://localhost:8000
 PORT ?= 9000
 BACKEND_ARGS ?=
 
-.PHONY: backend-install frontend-install test frontend-test lint build backend frontend demo demo-api
+.PHONY: backend-install frontend-install test frontend-test lint build backend frontend demo demo-api docker-demo docker-down
 
 backend-install:
 	cd backend && python3 -m venv .venv && .venv/bin/python -m pip install -e '.[dev]'
@@ -34,3 +34,9 @@ demo-api:
 
 demo:
 	bash scripts/demo.sh
+
+docker-demo:
+	docker compose up --build
+
+docker-down:
+	docker compose down

@@ -1,0 +1,48 @@
+services:
+  demo-upstream:
+    build:
+      context: ./backend
+    entrypoint: ["python", "-m", "tracelens.demo"]
+
+  tracelens:
+    build:
+      context: ./backend
+    command:
+      - --target
+      - http://demo-upstream:8000
+      - --bind-host
+      - 0.0.0.0
+      - --database-path
+      - /data/tracelens.db
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - tracelens-data:/data
+    depends_on:
+      - demo-upstream
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:9000/api/health')"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  dashboard:
+    build:
+      context: ./frontend
+    ports:
+      - "127.0.0.1:5173:80"
+    depends_on:
+      tracelens:
+        condition: service_healthy
+
+  demo-traffic:
+    build:
+      context: ./backend
+    entrypoint: ["python", "-m", "tracelens.demo_traffic"]
+    depends_on:
+      tracelens:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  tracelens-data:

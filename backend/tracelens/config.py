@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_BIND_HOST = "127.0.0.1"
+DOCKER_BIND_HOST = "0.0.0.0"
 DEFAULT_PORT = 9000
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_CAPTURE_BODY_BYTES = 64 * 1024
@@ -38,8 +39,8 @@ class Settings:
 
         if not 1 <= self.port <= 65535:
             raise ValueError("port must be between 1 and 65535")
-        if self.bind_host != DEFAULT_BIND_HOST:
-            raise ValueError("V1 only permits binding to 127.0.0.1")
+        if self.bind_host not in {DEFAULT_BIND_HOST, DOCKER_BIND_HOST}:
+            raise ValueError("bind host must be 127.0.0.1 or 0.0.0.0")
         if self.request_timeout_seconds <= 0:
             raise ValueError("request timeout must be greater than zero")
         if self.max_capture_body_bytes < 0:
@@ -77,6 +78,18 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
     parser.add_argument("--target", required=True, help="Absolute upstream http(s) URL")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Local proxy port")
     parser.add_argument(
+        "--bind-host",
+        default=DEFAULT_BIND_HOST,
+        choices=[DEFAULT_BIND_HOST, DOCKER_BIND_HOST],
+        help="Listening address; use 0.0.0.0 only inside a container",
+    )
+    parser.add_argument(
+        "--database-path",
+        type=Path,
+        default=Path("tracelens.db"),
+        help="SQLite database file path",
+    )
+    parser.add_argument(
         "--ai-endpoint",
         help="OpenAI-compatible chat completions URL; analysis remains disabled when omitted",
     )
@@ -104,6 +117,8 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
         return Settings(
             target_url=args.target,
             port=args.port,
+            bind_host=args.bind_host,
+            database_path=args.database_path,
             ai_endpoint=args.ai_endpoint,
             ai_model=args.ai_model,
             ai_api_key=os.getenv("TRACELENS_AI_API_KEY"),
