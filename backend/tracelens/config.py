@@ -14,6 +14,7 @@ CONTAINER_MODE_ENV = "TRACELENS_CONTAINER_MODE"
 DEFAULT_PORT = 9000
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_CAPTURE_BODY_BYTES = 64 * 1024
+DEFAULT_MAX_FORWARD_BODY_BYTES = 10 * 1024 * 1024
 DEFAULT_AI_MAX_CONTEXT_BYTES = 24 * 1024
 DEFAULT_AI_MAX_RETRIES = 2
 
@@ -28,6 +29,7 @@ class Settings:
     container_mode: bool = False
     request_timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_capture_body_bytes: int = DEFAULT_MAX_CAPTURE_BODY_BYTES
+    max_forward_body_bytes: int = DEFAULT_MAX_FORWARD_BODY_BYTES
     database_path: Path = Path("tracelens.db")
     ai_endpoint: str | None = None
     ai_model: str | None = None
@@ -49,6 +51,8 @@ class Settings:
             raise ValueError("request timeout must be greater than zero")
         if self.max_capture_body_bytes < 0:
             raise ValueError("maximum capture body size cannot be negative")
+        if self.max_forward_body_bytes < 1:
+            raise ValueError("maximum forwarded body size must be greater than zero")
         if (self.ai_endpoint is None) != (self.ai_model is None):
             raise ValueError("AI endpoint and model must be configured together")
         if self.ai_max_context_bytes < 4 * 1024:
@@ -88,6 +92,12 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
         help="SQLite database file path",
     )
     parser.add_argument(
+        "--max-forward-body-bytes",
+        type=int,
+        default=DEFAULT_MAX_FORWARD_BODY_BYTES,
+        help="Maximum buffered request or response body size",
+    )
+    parser.add_argument(
         "--ai-endpoint",
         help="OpenAI-compatible chat completions URL; analysis remains disabled when omitted",
     )
@@ -119,6 +129,7 @@ def parse_args(arguments: list[str] | None = None) -> Settings:
             bind_host=DOCKER_BIND_HOST if container_mode else DEFAULT_BIND_HOST,
             container_mode=container_mode,
             database_path=args.database_path,
+            max_forward_body_bytes=args.max_forward_body_bytes,
             ai_endpoint=args.ai_endpoint,
             ai_model=args.ai_model,
             ai_api_key=os.getenv("TRACELENS_AI_API_KEY"),

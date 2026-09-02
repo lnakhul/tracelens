@@ -203,9 +203,10 @@ tracelens --target http://localhost:8000 --port 9000
 
 - `--target` is required and must be an absolute `http` or `https` URL.
 - `--port` defaults to `9000`.
-- The upstream URL is built from the configured target base URL plus the incoming path and query string.
-- Request method, query string, body, and end-to-end headers are forwarded, excluding hop-by-hop headers.
-- Response status, body, and end-to-end headers are returned unchanged where possible.
+- `--max-forward-body-bytes` defaults to `10 MiB` and bounds each buffered request and response body.
+- The upstream URL is built from the configured target base URL plus the original encoded path and query string.
+- Request method, query string, body, and end-to-end headers are forwarded, excluding hop-by-hop headers and fields named by `Connection`.
+- Response status, raw encoded body, and end-to-end headers are returned unchanged; duplicate headers are preserved.
 - `Host`, `Connection`, `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `TE`, `Trailer`, `Transfer-Encoding`, and `Upgrade` are never forwarded.
 - `/api/*` is reserved for TraceLens management APIs and cannot be proxied.
 
@@ -214,6 +215,8 @@ tracelens --target http://localhost:8000 --port 9000
 | Condition | Client result | Captured trace |
 | --- | --- | --- |
 | Upstream returns an HTTP response, including `4xx`/`5xx` | Preserve upstream response | Status and duration |
+| Client request body exceeds the forwarding limit | `413 Content Too Large` | `error_type: proxy_error`; body omitted |
+| Upstream response body exceeds the forwarding limit | `502 Bad Gateway` | `error_type: proxy_error` |
 | DNS, connection, or TLS error | `502 Bad Gateway` | `error_type: connect_error` |
 | Upstream timeout | `504 Gateway Timeout` | `error_type: timeout` |
 | Unexpected proxy exception | `502 Bad Gateway` | `error_type: proxy_error` when possible |
@@ -226,8 +229,8 @@ Proxy error responses use a small JSON body with a stable `detail` field. Intern
 - FastAPI route handlers and HTTPX forwarding run asynchronously.
 - Use one application-scoped `httpx.AsyncClient` so connection pooling is shared safely across requests.
 - Use SQLAlchemy's async SQLite engine with `aiosqlite`.
-- Keep request capture bounded: body reads have a configurable maximum size and never load unbounded streams into memory.
-- Initial defaults: `30` second upstream timeout and `64 KiB` maximum captured request or response body.
+- Read request and raw upstream response bodies incrementally, enforcing a `10 MiB` forwarding limit before retaining more data.
+- Initial defaults: `30` second upstream timeout, `10 MiB` maximum forwarded request or response body, and `64 KiB` maximum captured request or response body.
 - V1 supports normal buffered HTTP responses only; streaming behavior is deferred because capturing and replaying streams changes backpressure semantics.
 
 ## Privacy and Security
@@ -263,7 +266,7 @@ The dashboard polls `GET /api/traces` and `GET /api/metrics` every two seconds w
 
 | Layer | Coverage |
 | --- | --- |
-| Proxy | Forwarding method/path/query/body, filtered headers, returned response, timeout and connection failures |
+| Proxy | Encoded path/query and body forwarding, hop-by-hop and connection-token filtering, duplicate and encoded response representation, forwarding limits, timeout and connection failures |
 | Capture | Sensitive-header redaction, content-type checks, and body-size limits |
 | Persistence | Trace creation, ordering, filtering, clear operation, and metric calculations |
 | API | Query validation, pagination, detail `404`, response schemas, clear endpoint, endpoint latency anomaly detection, consent gates, and provider response handling |
@@ -278,6 +281,7 @@ Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClie
 | Application shape | One FastAPI process | Fastest local workflow; management API shares process with proxy |
 | Storage | SQLite via async SQLAlchemy | Portable and inspectable; not intended for high-volume retention |
 | Trace writes | Inline after upstream response | Ensures capture before client response; adds small latency versus a queue |
+| Body forwarding | Buffered, 10 MiB cap | Preserves deterministic capture while bounding memory; true streaming remains deferred |
 | Body capture | Safe types, 64 KiB cap, redaction | Useful debugging data without unbounded or binary capture |
 | Metrics | On-demand query calculation | Simple and correct for local volumes; pre-aggregation can come later |
 | Upstream errors | Preserve HTTP responses; synthesize gateway errors only for transport failures | Separates API failures from proxy failures |

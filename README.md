@@ -138,6 +138,11 @@ Use the dashboard detail panel to delete one trace, or `DELETE /api/traces` to p
 
 TraceLens is deliberately a local developer tool. HTTPS interception, streaming, and remote deployment are deferred.
 
+Request and response bodies are buffered for forwarding up to `10 MiB` by default. Configure the
+boundary with `--max-forward-body-bytes`; oversized client requests receive `413`, and oversized
+upstream responses receive `502`. Text capture remains independently capped at `64 KiB`, and
+encoded response bodies are forwarded unchanged but omitted from body capture.
+
 Native runs always bind to `127.0.0.1`. The Docker demo enables an internal container mode so TraceLens can listen on its private Compose network, but Compose does not publish the backend port to the host. Container mode is reserved for the packaged stack and is not a public CLI option.
 
 ## V2: Latency Anomalies

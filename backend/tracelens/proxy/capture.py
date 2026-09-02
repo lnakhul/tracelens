@@ -26,7 +26,15 @@ def capture_body(headers: Iterable[tuple[str, str]], body: bytes, max_bytes: int
         (value.lower() for name, value in headers if name.lower() == "content-type"),
         "",
     )
-    if len(body) > max_bytes or not content_type.startswith(TEXTUAL_CONTENT_TYPES):
+    content_encoding = next(
+        (value.lower() for name, value in headers if name.lower() == "content-encoding"),
+        "identity",
+    )
+    if (
+        len(body) > max_bytes
+        or not content_type.startswith(TEXTUAL_CONTENT_TYPES)
+        or content_encoding not in {"", "identity"}
+    ):
         return None
 
     return body.decode("utf-8", errors="replace")

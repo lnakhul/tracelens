@@ -1,5 +1,7 @@
+import gzip
 import json
 import sqlite3
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -10,9 +12,26 @@ from tracelens.config import Settings
 from tracelens.main import create_app
 
 
-def create_client(handler: httpx.MockTransport, database_path: Path) -> TestClient:
+class AsyncBytesStream(httpx.AsyncByteStream):
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self.content
+
+
+def create_client(
+    handler: httpx.MockTransport,
+    database_path: Path,
+    *,
+    max_forward_body_bytes: int = 10 * 1024 * 1024,
+) -> TestClient:
     app = create_app(
-        Settings(target_url="http://upstream.test/base", database_path=database_path),
+        Settings(
+            target_url="http://upstream.test/base",
+            database_path=database_path,
+            max_forward_body_bytes=max_forward_body_bytes,
+        ),
         transport=handler,
     )
     return TestClient(app)
@@ -135,3 +154,97 @@ def test_persistence_failure_does_not_replace_upstream_response(tmp_path: Path) 
 
     assert response.status_code == 201
     assert response.json() == {"id": "order-42"}
+
+
+def test_proxy_preserves_compressed_response_representation(tmp_path: Path) -> None:
+    compressed = gzip.compress(b'{"status":"ok"}')
+
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            stream=AsyncBytesStream(compressed),
+            headers={"content-type": "application/json", "content-encoding": "gzip"},
+        )
+
+    database_path = tmp_path / "traces.db"
+    with create_client(httpx.MockTransport(upstream_handler), database_path) as client:
+        response = client.get("/compressed")
+
+    assert response.status_code == 200
+    assert response.headers["content-encoding"] == "gzip"
+    assert response.content == b'{"status":"ok"}'
+    assert read_traces(database_path)[0]["response_body"] is None
+
+
+def test_proxy_preserves_duplicate_response_headers(tmp_path: Path) -> None:
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers=[("set-cookie", "first=1; Path=/"), ("set-cookie", "second=2; Path=/")],
+        )
+
+    with create_client(httpx.MockTransport(upstream_handler), tmp_path / "traces.db") as client:
+        response = client.get("/cookies")
+
+    assert response.headers.get_list("set-cookie") == ["first=1; Path=/", "second=2; Path=/"]
+
+
+def test_proxy_removes_headers_named_by_connection(tmp_path: Path) -> None:
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        assert "x-internal-hop" not in request.headers
+        return httpx.Response(204)
+
+    with create_client(httpx.MockTransport(upstream_handler), tmp_path / "traces.db") as client:
+        response = client.get(
+            "/headers",
+            headers={"connection": "keep-alive, x-internal-hop", "x-internal-hop": "secret"},
+        )
+
+    assert response.status_code == 204
+
+
+def test_proxy_preserves_encoded_path_and_query(tmp_path: Path) -> None:
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.raw_path == b"/base/objects/a%2Fb?value=%2F"
+        return httpx.Response(204)
+
+    with create_client(httpx.MockTransport(upstream_handler), tmp_path / "traces.db") as client:
+        response = client.get("/objects/a%2Fb?value=%2F")
+
+    assert response.status_code == 204
+
+
+def test_proxy_rejects_oversized_request_before_forwarding(tmp_path: Path) -> None:
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("oversized request must not be forwarded")
+
+    database_path = tmp_path / "traces.db"
+    with create_client(
+        httpx.MockTransport(upstream_handler), database_path, max_forward_body_bytes=4
+    ) as client:
+        response = client.post("/upload", content=b"12345", headers={"content-type": "text/plain"})
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Request body exceeded the proxy limit"}
+    trace = read_traces(database_path)[0]
+    assert trace["error_type"] == "proxy_error"
+    assert trace["request_body"] is None
+
+
+def test_proxy_rejects_oversized_upstream_response(tmp_path: Path) -> None:
+    def upstream_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            stream=AsyncBytesStream(b"12345"),
+            headers={"content-type": "text/plain"},
+        )
+
+    database_path = tmp_path / "traces.db"
+    with create_client(
+        httpx.MockTransport(upstream_handler), database_path, max_forward_body_bytes=4
+    ) as client:
+        response = client.get("/download")
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "Upstream response exceeded the proxy limit"}
+    assert read_traces(database_path)[0]["error_type"] == "proxy_error"
