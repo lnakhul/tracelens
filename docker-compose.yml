@@ -2,7 +2,12 @@ services:
   demo-upstream:
     build:
       context: ./backend
-    entrypoint: ["python", "-m", "tracelens.demo"]
+    entrypoint: ["python", "-m", "tracelens.demo", "--bind-host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/users/1')"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
 
   tracelens:
     build:
@@ -19,7 +24,8 @@ services:
     volumes:
       - tracelens-data:/data
     depends_on:
-      - demo-upstream
+      demo-upstream:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:9000/api/health')"]
       interval: 2s
