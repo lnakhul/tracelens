@@ -5,6 +5,7 @@ import pytest
 from tracelens.config import (
     CONTAINER_MODE_ENV,
     DEFAULT_BIND_HOST,
+    DEFAULT_MAX_FORWARD_BODY_BYTES,
     DEFAULT_PORT,
     DOCKER_BIND_HOST,
     Settings,
@@ -17,6 +18,7 @@ def test_settings_normalize_target_url() -> None:
 
     assert settings.target_url == "https://api.example.test/v1"
     assert settings.port == DEFAULT_PORT
+    assert settings.max_forward_body_bytes == DEFAULT_MAX_FORWARD_BODY_BYTES
 
 
 @pytest.mark.parametrize(
@@ -88,3 +90,8 @@ def test_parse_args_rejects_public_bind_host_override() -> None:
 def test_settings_reject_non_positive_retention_period() -> None:
     with pytest.raises(ValueError, match="retention"):
         Settings(target_url="http://upstream.test", retention_hours=0)
+
+
+def test_settings_reject_non_positive_forward_body_limit() -> None:
+    with pytest.raises(ValueError, match="forwarded body"):
+        Settings(target_url="http://upstream.test", max_forward_body_bytes=0)

@@ -11,7 +11,12 @@ from fastapi import APIRouter, Request
 from starlette.responses import JSONResponse, Response
 
 from tracelens.proxy.capture import capture_body, sanitize_headers
-from tracelens.proxy.forwarding import forward_request
+from tracelens.proxy.forwarding import (
+    RequestBodyTooLargeError,
+    UpstreamResponseTooLargeError,
+    forward_request,
+    read_request_body,
+)
 from tracelens.services.traces import TraceData, TraceService
 
 router = APIRouter(include_in_schema=False)
@@ -32,35 +37,50 @@ async def proxy_request(request: Request, path: str) -> Response:
     started_at = perf_counter()
     timestamp = datetime.now(UTC)
     response: Response
-    request_body: bytes
+    request_body = b""
+    request_body_oversized = False
     response_headers: list[tuple[str, str]]
     response_body: bytes
     status_code: int | None = None
     error_type: str | None = None
 
     try:
-        response, request_body, upstream_response = await forward_request(
+        request_body = await read_request_body(request, settings.max_forward_body_bytes)
+        response, status_code, response_headers, response_body = await forward_request(
             request,
+            request_body,
             client,
             settings.target_url,
+            settings.max_forward_body_bytes,
         )
-        status_code = upstream_response.status_code
-        response_headers = list(upstream_response.headers.items())
-        response_body = upstream_response.content
+    except RequestBodyTooLargeError:
+        request_body_oversized = True
+        response = JSONResponse(
+            status_code=413,
+            content={"detail": "Request body exceeded the proxy limit"},
+        )
+        response_headers = list(response.headers.items())
+        response_body = response.body
+        error_type = "proxy_error"
+    except UpstreamResponseTooLargeError:
+        response = JSONResponse(
+            status_code=502,
+            content={"detail": "Upstream response exceeded the proxy limit"},
+        )
+        response_headers = list(response.headers.items())
+        response_body = response.body
+        error_type = "proxy_error"
     except httpx.TimeoutException:
-        request_body = await request.body()
         response = JSONResponse(status_code=504, content={"detail": "Upstream request timed out"})
         response_headers = list(response.headers.items())
         response_body = response.body
         error_type = "timeout"
     except httpx.TransportError:
-        request_body = await request.body()
         response = JSONResponse(status_code=502, content={"detail": "Unable to reach upstream"})
         response_headers = list(response.headers.items())
         response_body = response.body
         error_type = "connect_error"
     except httpx.HTTPError:
-        request_body = await request.body()
         response = JSONResponse(status_code=502, content={"detail": "Proxy request failed"})
         response_headers = list(response.headers.items())
         response_body = response.body
@@ -75,7 +95,9 @@ async def proxy_request(request: Request, path: str) -> Response:
         duration_ms=(perf_counter() - started_at) * 1000,
         error_type=error_type,
         request_headers=sanitize_headers(request.headers.items()),
-        request_body=capture_body(
+        request_body=None
+        if request_body_oversized
+        else capture_body(
             request.headers.items(),
             request_body,
             settings.max_capture_body_bytes,

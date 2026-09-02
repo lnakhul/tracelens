@@ -16,3 +16,9 @@ def test_capture_body_omits_binary_and_oversized_content() -> None:
 
     assert capture_body(binary_headers, b"binary", max_bytes=64) is None
     assert capture_body(text_headers, b"too long", max_bytes=3) is None
+
+
+def test_capture_body_omits_encoded_content() -> None:
+    headers = [("content-type", "application/json"), ("content-encoding", "gzip")]
+
+    assert capture_body(headers, b"encoded bytes", max_bytes=64) is None
