@@ -147,7 +147,7 @@ Native runs always bind to `127.0.0.1`. The Docker demo enables an internal cont
 
 ## V2: Latency Anomalies
 
-TraceLens derives a baseline from the five preceding traces with the same HTTP method and path. A request is marked as a latency anomaly when it takes at least twice that baseline. Analysis is calculated from locally retained traces when they are read, so it introduces no extra persisted data or migration.
+Once an endpoint has at least five earlier traces, TraceLens derives its baseline from their mean duration. A request is marked as a latency anomaly when it takes at least twice that baseline. SQLite calculates baselines for only the requested page or detail row, so analysis introduces no extra persisted data, migration, or full-history ORM load.
 
 The trace list and detail APIs include `baseline_duration_ms`, `latency_increase_ratio`, and `is_anomaly`. The dashboard marks anomalous requests and shows the baseline comparison in trace detail.
 
