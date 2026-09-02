@@ -114,7 +114,7 @@ All management endpoints are local and start with `/api`.
 
 Returns a paginated reverse-chronological list of trace summaries.
 
-The dashboard requests fixed 50-record pages with `limit` and `offset`, preserving server-side filters across page navigation. The `(timestamp, id)` index supports the stable sort order, while anomaly analysis reads only traces for endpoints represented in the requested page rather than the entire retained history.
+The dashboard requests fixed 50-record pages with `limit` and `offset`, preserving server-side filters across page navigation. The `(timestamp, id)` index supports the stable sort order. Correlated database aggregates calculate each returned trace's endpoint baseline, so only the requested ORM rows are materialized.
 
 | Parameter | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -170,7 +170,7 @@ Permanently deletes one trace and all associated metadata-only AI analysis audit
 
 ### `GET /api/metrics`
 
-Returns metrics over the selected trace retention window. V1 computes these from SQLite on demand.
+Returns metrics over the selected trace retention window. SQLite computes count, error count, and average on demand; a bounded scalar query selects the nearest-rank P95 value without loading trace entities.
 
 ```json
 {
@@ -283,7 +283,7 @@ Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClie
 | Trace writes | Inline after upstream response | Ensures capture before client response; adds small latency versus a queue |
 | Body forwarding | Buffered, 10 MiB cap | Preserves deterministic capture while bounding memory; true streaming remains deferred |
 | Body capture | Safe types, 64 KiB cap, redaction | Useful debugging data without unbounded or binary capture |
-| Metrics | On-demand query calculation | Simple and correct for local volumes; pre-aggregation can come later |
+| Metrics | On-demand database aggregates | Avoids full-history ORM loads; pre-aggregation can come later if query volume grows |
 | Upstream errors | Preserve HTTP responses; synthesize gateway errors only for transport failures | Separates API failures from proxy failures |
 | UI updates | Two-second polling | Simple local-first behavior; WebSockets are deferred |
 | AI integration | OpenAI-compatible endpoint, explicit consent | Provider choice remains flexible; no data is sent without configuration and user approval |

@@ -5,8 +5,10 @@ from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
+from sqlalchemy import event
 
 from tracelens.config import Settings
+from tracelens.database.models import Trace
 from tracelens.main import create_app
 from tracelens.services.traces import TraceData
 
@@ -212,6 +214,50 @@ def test_trace_api_flags_request_slower_than_endpoint_baseline(tmp_path: Path) -
     assert listed.json()["items"][1]["is_anomaly"] is False
     assert detail.status_code == 200
     assert detail.json()["is_anomaly"] is True
+
+
+def test_trace_queries_only_materialize_requested_orm_rows(tmp_path: Path) -> None:
+    with create_client(tmp_path / "traces.db") as client:
+        trace_service = client.app.state.trace_service
+        timestamp = datetime(2026, 8, 17, tzinfo=UTC)
+        for index in range(20):
+            client.portal.call(
+                trace_service.record,
+                trace_data(
+                    timestamp=timestamp + timedelta(seconds=index),
+                    path="/orders",
+                    status_code=500 if index == 19 else 200,
+                    duration_ms=index + 1,
+                ),
+            )
+
+        loaded_trace_ids: list[int] = []
+
+        def record_load(trace: Trace, context: object) -> None:
+            del context
+            loaded_trace_ids.append(trace.id)
+
+        event.listen(Trace, "load", record_load)
+        try:
+            page = client.get("/api/traces?limit=3")
+            assert len(page.json()["items"]) == 3
+            assert len(loaded_trace_ids) == 3
+
+            detail = client.get("/api/traces/10")
+            assert detail.status_code == 200
+            assert len(loaded_trace_ids) == 4
+
+            metrics = client.get("/api/metrics")
+            assert len(loaded_trace_ids) == 4
+        finally:
+            event.remove(Trace, "load", record_load)
+
+    assert metrics.json() == {
+        "request_count": 20,
+        "error_rate": 0.05,
+        "average_duration_ms": 10.5,
+        "p95_duration_ms": 19.0,
+    }
 
 
 def test_failure_analysis_requires_consent_and_uses_opted_in_context(tmp_path: Path) -> None:

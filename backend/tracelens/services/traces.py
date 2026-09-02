@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, select, tuple_
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from tracelens.database.models import FailureAnalysisAudit, Trace
 
@@ -122,40 +123,24 @@ class TraceService:
         async with self._session_factory() as session:
             total = await session.scalar(select(func.count()).select_from(Trace).where(*filters))
             statement = (
-                select(Trace)
+                self._trace_with_anomaly_columns()
                 .where(*filters)
                 .order_by(Trace.timestamp.desc(), Trace.id.desc())
                 .offset(offset)
                 .limit(limit)
             )
-            items = list((await session.scalars(statement)).all())
-            endpoint_keys = {(item.method, item.path) for item in items}
-            if endpoint_keys:
-                analysis_traces = list(
-                    (
-                        await session.scalars(
-                            select(Trace)
-                            .where(tuple_(Trace.method, Trace.path).in_(endpoint_keys))
-                            .order_by(Trace.timestamp.asc(), Trace.id.asc())
-                        )
-                    ).all()
-                )
-                self._apply_anomaly_analysis(analysis_traces)
+            items = self._attach_anomaly_analysis((await session.execute(statement)).all())
         return TracePage(items=items, total=total or 0)
 
     async def get(self, trace_id: int) -> Trace | None:
         """Return one complete trace, if it exists."""
 
         async with self._session_factory() as session:
-            traces = list(
-                (
-                    await session.scalars(
-                        select(Trace).order_by(Trace.timestamp.asc(), Trace.id.asc())
-                    )
-                ).all()
-            )
-            self._apply_anomaly_analysis(traces)
-            return next((trace for trace in traces if trace.id == trace_id), None)
+            statement = self._trace_with_anomaly_columns().where(Trace.id == trace_id)
+            row = (await session.execute(statement)).one_or_none()
+            if row is None:
+                return None
+            return self._attach_anomaly_analysis([row])[0]
 
     async def successful_comparisons(self, trace: Trace, limit: int = 5) -> list[Trace]:
         """Return recent successful calls to the same endpoint for failure comparison."""
@@ -179,28 +164,38 @@ class TraceService:
         """Calculate request, error-rate, latency average, and nearest-rank P95 metrics."""
 
         async with self._session_factory() as session:
-            traces = list(
-                (
-                    await session.scalars(select(Trace).order_by(Trace.duration_ms))
-                ).all()
+            request_count, error_count, average_duration_ms = (
+                await session.execute(
+                    select(
+                        func.count(Trace.id),
+                        func.sum(
+                            case(
+                                (
+                                    or_(Trace.status_code >= 500, Trace.error_type.is_not(None)),
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        func.avg(Trace.duration_ms),
+                    )
+                )
+            ).one()
+            if not request_count:
+                return TraceMetrics(0, 0.0, 0.0, 0.0)
+
+            p95_index = max(0, (95 * request_count + 99) // 100 - 1)
+            p95_duration_ms = await session.scalar(
+                select(Trace.duration_ms)
+                .order_by(Trace.duration_ms.asc(), Trace.id.asc())
+                .offset(p95_index)
+                .limit(1)
             )
-
-        request_count = len(traces)
-        if not request_count:
-            return TraceMetrics(0, 0.0, 0.0, 0.0)
-
-        durations = [trace.duration_ms for trace in traces]
-        error_count = sum(
-            (trace.status_code is not None and trace.status_code >= 500)
-            or trace.error_type is not None
-            for trace in traces
-        )
-        p95_index = max(0, (95 * request_count + 99) // 100 - 1)
         return TraceMetrics(
             request_count=request_count,
-            error_rate=error_count / request_count,
-            average_duration_ms=sum(durations) / request_count,
-            p95_duration_ms=durations[p95_index],
+            error_rate=(error_count or 0) / request_count,
+            average_duration_ms=average_duration_ms or 0.0,
+            p95_duration_ms=p95_duration_ms or 0.0,
         )
 
     async def clear(self) -> None:
@@ -255,17 +250,43 @@ class TraceService:
             filters.append(Trace.duration_ms <= max_duration_ms)
         return filters
 
-    @classmethod
-    def _apply_anomaly_analysis(cls, traces: list[Trace]) -> None:
-        """Attach latency analysis based on earlier calls to the same endpoint."""
+    @staticmethod
+    def _trace_with_anomaly_columns():
+        """Select traces with correlated aggregates over earlier endpoint calls."""
 
-        prior_durations: dict[tuple[str, str], list[float]] = {}
-        for trace in traces:
-            endpoint = (trace.method, trace.path)
-            baseline_samples = prior_durations.setdefault(endpoint, [])
+        prior = aliased(Trace)
+        earlier_trace = or_(
+            prior.timestamp < Trace.timestamp,
+            and_(prior.timestamp == Trace.timestamp, prior.id < Trace.id),
+        )
+        same_endpoint = and_(prior.method == Trace.method, prior.path == Trace.path)
+        prior_count = (
+            select(func.count(prior.id))
+            .where(same_endpoint, earlier_trace)
+            .correlate(Trace)
+            .scalar_subquery()
+        )
+        prior_average = (
+            select(func.avg(prior.duration_ms))
+            .where(same_endpoint, earlier_trace)
+            .correlate(Trace)
+            .scalar_subquery()
+        )
+        return select(
+            Trace,
+            prior_count.label("prior_count"),
+            prior_average.label("prior_average"),
+        )
+
+    @classmethod
+    def _attach_anomaly_analysis(cls, rows: list[object]) -> list[Trace]:
+        """Attach calculated latency fields to the bounded ORM result set."""
+
+        traces: list[Trace] = []
+        for trace, prior_count, prior_average in rows:
             baseline_duration_ms = (
-                sum(baseline_samples) / len(baseline_samples)
-                if len(baseline_samples) >= cls._MIN_BASELINE_SAMPLES
+                float(prior_average)
+                if prior_count >= cls._MIN_BASELINE_SAMPLES and prior_average is not None
                 else None
             )
             latency_increase_ratio = (
@@ -279,4 +300,5 @@ class TraceService:
                 latency_increase_ratio is not None
                 and latency_increase_ratio >= cls._ANOMALY_MULTIPLIER
             )
-            baseline_samples.append(trace.duration_ms)
+            traces.append(trace)
+        return traces
