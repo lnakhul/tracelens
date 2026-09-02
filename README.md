@@ -14,7 +14,7 @@ flowchart LR
 
 ## Quick Start
 
-Prerequisites: Python $>=3.12,<3.15$, Node.js 20+, and `make`.
+Prerequisites: Python $>=3.12,<3.15$, Node.js 20.19+ or 22.12+, and `make`.
 
 ```bash
 make backend-install
