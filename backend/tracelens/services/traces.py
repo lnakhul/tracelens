@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tracelens.database.models import FailureAnalysisAudit, Trace
@@ -121,13 +121,6 @@ class TraceService:
         )
         async with self._session_factory() as session:
             total = await session.scalar(select(func.count()).select_from(Trace).where(*filters))
-            all_traces = list(
-                (
-                    await session.scalars(
-                        select(Trace).order_by(Trace.timestamp.asc(), Trace.id.asc())
-                    )
-                ).all()
-            )
             statement = (
                 select(Trace)
                 .where(*filters)
@@ -136,7 +129,18 @@ class TraceService:
                 .limit(limit)
             )
             items = list((await session.scalars(statement)).all())
-            self._apply_anomaly_analysis(all_traces)
+            endpoint_keys = {(item.method, item.path) for item in items}
+            if endpoint_keys:
+                analysis_traces = list(
+                    (
+                        await session.scalars(
+                            select(Trace)
+                            .where(tuple_(Trace.method, Trace.path).in_(endpoint_keys))
+                            .order_by(Trace.timestamp.asc(), Trace.id.asc())
+                        )
+                    ).all()
+                )
+                self._apply_anomaly_analysis(analysis_traces)
         return TracePage(items=items, total=total or 0)
 
     async def get(self, trace_id: int) -> Trace | None:

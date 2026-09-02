@@ -104,7 +104,7 @@ The proxy route is the only component that communicates with the upstream. Route
 | `response_headers` | JSON text, nullable | Sanitized headers |
 | `response_body` | text, nullable | Captured only when safe and within limits |
 
-Indexes: `(timestamp DESC)`, `(path)`, `(status_code)`, and `(duration_ms)`.
+Indexes: `(timestamp)`, `(timestamp, id)` for reverse-chronological pagination, `(method, path, timestamp, id)` for endpoint latency analysis, `(path)`, `(status_code)`, and `(duration_ms)`.
 
 ## REST API Contract
 
@@ -113,6 +113,8 @@ All management endpoints are local and start with `/api`.
 ### `GET /api/traces`
 
 Returns a paginated reverse-chronological list of trace summaries.
+
+The dashboard requests fixed 50-record pages with `limit` and `offset`, preserving server-side filters across page navigation. The `(timestamp, id)` index supports the stable sort order, while anomaly analysis reads only traces for endpoints represented in the requested page rather than the entire retained history.
 
 | Parameter | Type | Default | Meaning |
 | --- | --- | --- | --- |

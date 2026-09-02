@@ -82,6 +82,8 @@ curl 'http://127.0.0.1:9000/api/traces?status_code=500&min_duration_ms=300'
 curl http://127.0.0.1:9000/api/metrics
 ```
 
+Trace lists are paginated with `limit` and `offset` (up to 200 traces per page). The dashboard loads 50 traces at a time and keeps active filters when navigating pages.
+
 ## Retention and Deletion
 
 TraceLens retains captured traces until you clear or delete them by default. Enable automatic pruning with a positive `--retention-hours` value; pruning runs when a new trace is captured and removes the expired trace plus its metadata-only AI analysis audits.

@@ -133,6 +133,31 @@ def test_trace_api_rejects_invalid_pagination_and_latency_filters(tmp_path: Path
     assert invalid_duration.status_code == 422
 
 
+def test_trace_api_paginates_in_reverse_chronological_order(tmp_path: Path) -> None:
+    with create_client(tmp_path / "traces.db") as client:
+        trace_service = client.app.state.trace_service
+        timestamp = datetime(2026, 8, 17, tzinfo=UTC)
+        for index in range(5):
+            client.portal.call(
+                trace_service.record,
+                trace_data(
+                    timestamp=timestamp + timedelta(seconds=index),
+                    path=f"/requests/{index}",
+                    status_code=200,
+                    duration_ms=10,
+                ),
+            )
+
+        first_page = client.get("/api/traces?limit=2&offset=0")
+        second_page = client.get("/api/traces?limit=2&offset=2")
+
+    assert first_page.json()["total"] == 5
+    assert first_page.json()["offset"] == 0
+    assert [item["path"] for item in first_page.json()["items"]] == ["/requests/4", "/requests/3"]
+    assert second_page.json()["offset"] == 2
+    assert [item["path"] for item in second_page.json()["items"]] == ["/requests/2", "/requests/1"]
+
+
 def test_trace_api_deletes_one_trace_and_expired_traces(tmp_path: Path) -> None:
     with create_client(tmp_path / "traces.db", retention_hours=1) as client:
         trace_service = client.app.state.trace_service

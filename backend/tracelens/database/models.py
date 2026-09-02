@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -16,6 +16,10 @@ class Trace(Base):
     """One proxied HTTP exchange captured by TraceLens."""
 
     __tablename__ = "traces"
+    __table_args__ = (
+        Index("ix_traces_timestamp_id", "timestamp", "id"),
+        Index("ix_traces_endpoint_timestamp_id", "method", "path", "timestamp", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

@@ -40,7 +40,7 @@ export type TraceFilters = {
     minDuration: string
 }
 
-type TraceList = {
+export type TraceList = {
     items: TraceSummary[]
     total: number
 }
@@ -54,8 +54,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     return response.status === 204 ? (undefined as T) : ((await response.json()) as T)
 }
 
-export function getTraces(filters: TraceFilters): Promise<TraceList> {
-    const parameters = new URLSearchParams({ limit: '50' })
+export function getTraces(
+    filters: TraceFilters,
+    offset: number,
+    limit: number,
+): Promise<TraceList> {
+    const parameters = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     if (filters.path) parameters.set('path', filters.path)
     if (filters.statusCode) parameters.set('status_code', filters.statusCode)
     if (filters.minDuration) parameters.set('min_duration_ms', filters.minDuration)
