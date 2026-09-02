@@ -49,7 +49,7 @@ It starts a local upstream API on port `8000`, TraceLens on port `9000`, seeds s
 
 Run the upstream API alone with `make demo-api` when integrating TraceLens manually. The API exposes `GET /users/{id}`, `GET /reports/daily?slow=true`, and `POST /orders`; omit `customer_id` from an order to create a deterministic `500` response.
 
-## Docker Demo
+## Docker Evaluation Demo
 
 Docker Desktop with Docker Compose is the only additional prerequisite. Run the complete evaluation environment with:
 
@@ -57,7 +57,12 @@ Docker Desktop with Docker Compose is the only additional prerequisite. Run the 
 make docker-demo
 ```
 
-Compose builds and starts the demo upstream, TraceLens, a production dashboard served by Nginx, and a one-shot traffic seeder. Open `http://127.0.0.1:5173` after the services are ready. Nginx proxies dashboard `/api` requests to TraceLens over the private Compose network; the backend's port `9000` is not published to the host.
+Compose builds and starts the demo upstream, TraceLens, an optimized dashboard build served by Nginx, and a one-shot traffic seeder. Open `http://127.0.0.1:5173` after the services are ready. Nginx proxies dashboard `/api` requests to TraceLens over the Compose network; the backend's port `9000` is not published to the host.
+
+This stack is for local evaluation, not production deployment. It has no user authentication, TLS,
+tenant isolation, or encrypted storage. Keep its published dashboard port on loopback, do not
+publish backend port `9000`, and read the [security model](docs/security.md) before adapting the
+Compose file.
 
 The SQLite database persists in the `tracelens-data` Docker volume, so traffic remains available across `docker compose down` and the next `make docker-demo`. Stop services with `make docker-down`. To remove all containerized traces and images created by the stack, run:
 
@@ -143,7 +148,7 @@ boundary with `--max-forward-body-bytes`; oversized client requests receive `413
 upstream responses receive `502`. Text capture remains independently capped at `64 KiB`, and
 encoded response bodies are forwarded unchanged but omitted from body capture.
 
-Native runs always bind to `127.0.0.1`. The Docker demo enables an internal container mode so TraceLens can listen on its private Compose network, but Compose does not publish the backend port to the host. Container mode is reserved for the packaged stack and is not a public CLI option.
+Native runs always bind to `127.0.0.1`. The Docker demo enables an internal container mode so TraceLens can listen on its Compose network, but Compose does not publish the backend port to the host. Container mode is reserved for the packaged stack and is not a public CLI option.
 
 ## V2: Latency Anomalies
 
@@ -151,7 +156,7 @@ Once an endpoint has at least five earlier traces, TraceLens derives its baselin
 
 The trace list and detail APIs include `baseline_duration_ms`, `latency_increase_ratio`, and `is_anomaly`. The dashboard marks anomalous requests and shows the baseline comparison in trace detail.
 
-## V3: AI-Assisted Failure Analysis
+## Experimental: AI-Assisted Failure Analysis
 
 Failure analysis is disabled by default. Configure an OpenAI-compatible chat-completions endpoint, a model, and an API key to enable it:
 
@@ -165,11 +170,19 @@ For a failed trace, the dashboard requires an explicit consent checkbox before T
 
 AI context is capped at `24 KiB` by default, with oversized captured fields truncated before sharing. TraceLens retries transient transport failures and `429` rate limits twice by default, using capped backoff. Configure the limits with `--ai-max-context-bytes` and `--ai-max-retries`. Provider responses must satisfy a strict JSON schema. Each analysis action records only local audit metadata: timestamp, trace ID, selected model, body-sharing choice, outcome, provider status, and attempt count. Prompts and analysis results are never written to the audit table.
 
+This integration is experimental. It supports chat-completions providers that accept TraceLens's
+strict JSON-schema request shape; compatibility with every “OpenAI-compatible” service is not
+guaranteed. TraceLens does not enforce HTTPS or restrict the configured provider host. Use only a
+trusted HTTPS endpoint, review provider data-handling terms, and treat model output as untrusted
+diagnostic guidance. The UI checkbox is a human safeguard, while the unauthenticated API enforces
+only that `share_data: true` was supplied. See the [security model](docs/security.md#external-ai-analysis)
+for the exact data flow and limitations.
+
 ## Architecture
 
-The full V1 implementation contract covers module boundaries, request lifecycle, data model, REST API, proxy behavior, failure handling, concurrency, privacy, testing, and architectural tradeoffs.
+The architecture document covers module boundaries, request lifecycle, data model, REST API, proxy behavior, Docker evaluation topology, AI data flow, failure handling, concurrency, privacy, testing, and architectural tradeoffs.
 
-Read [the V1 architecture](docs/architecture.md#L1).
+Read the [architecture](docs/architecture.md) and [security model](docs/security.md).
 
 ## Quality Gates
 
@@ -182,7 +195,8 @@ tracelens/
   backend/                  # Python CLI, proxy, storage, and REST API
   frontend/                 # React and TypeScript dashboard
   docs/
-    architecture.md         # Canonical V1 technical design
+    architecture.md         # Current technical design and feature maturity
+    security.md             # Trust boundaries and operator guidance
     screenshots/            # Dashboard images and demos
   .github/
     workflows/              # CI
@@ -194,8 +208,10 @@ tracelens/
 
 - **V1:** local proxy, trace persistence, REST API, dashboard, CI, and documentation
 - **V2:** endpoint latency baselines and slow-request anomaly detection
-- **V3:** optional AI-assisted failure analysis with explicit data-sharing controls
+- **V3 experimental:** optional provider-backed failure analysis with explicit data-sharing controls
 
 ## Status
 
-V3 complete. AI analysis is opt-in and disabled until a provider is configured.
+V1 and V2 are implemented for local development. The Docker stack is an evaluation demo, and V3
+AI analysis remains experimental and disabled until a provider is configured. TraceLens is not a
+production-hardened or remotely deployable service.

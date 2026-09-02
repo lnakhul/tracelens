@@ -3,7 +3,7 @@
 This package contains the TraceLens CLI, FastAPI application, HTTP proxy, and local trace APIs.
 
 Native executions always listen on `127.0.0.1`. The packaged Docker stack sets an internal
-`TRACELENS_CONTAINER_MODE=1` environment flag so the backend can listen on the private Compose
+`TRACELENS_CONTAINER_MODE=1` environment flag so the backend can listen on the Compose
 network; do not use that flag to expose TraceLens on an untrusted network.
 
 Proxy request and response bodies are buffered up to `10 MiB` by default. Use
@@ -11,4 +11,6 @@ Proxy request and response bodies are buffered up to `10 MiB` by default. Use
 text-body capture limit.
 
 See the repository [README](../README.md) for the project overview and
-[architecture](../docs/architecture.md) for the V1 design.
+[architecture](../docs/architecture.md) for the current design. TraceLens is an unauthenticated
+local developer tool; review the [security model](../docs/security.md) before using captured data
+or configuring external AI analysis.

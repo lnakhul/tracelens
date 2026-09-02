@@ -2,7 +2,17 @@
 
 TraceLens is a local HTTP observability proxy for developers. It forwards HTTP requests to a target API, records metadata about each exchange, and exposes a dashboard-friendly REST API for inspecting traffic, failures, and latency.
 
-## V1 Scope
+## Current Scope and Maturity
+
+| Capability | Status | Intended use |
+| --- | --- | --- |
+| Local proxy, capture API, and dashboard | Implemented | Single-user local development |
+| Endpoint latency analysis | Implemented | Deterministic local diagnostic signal |
+| Docker Compose stack | Evaluation demo | Reproducible local demonstration, not deployment guidance |
+| External AI failure analysis | Experimental and opt-in | Provider-assisted diagnostic suggestion |
+
+“Implemented” describes repository functionality, not production hardening. TraceLens has no
+management-API authentication, multi-user authorization, or remote-deployment security boundary.
 
 ### Goals
 
@@ -20,7 +30,8 @@ TraceLens is a local HTTP observability proxy for developers. It forwards HTTP r
 - Authentication, multi-user access, or remote deployment.
 - Distributed tracing and cross-service correlation.
 - Alert delivery.
-- Docker packaging.
+- Production container orchestration or hardened container images.
+- Guaranteed compatibility with every provider described as OpenAI-compatible.
 
 ## System Architecture
 
@@ -32,9 +43,13 @@ flowchart LR
     Proxy -->|Persist trace| Database[(SQLite)]
     Dashboard[React dashboard] -->|REST API| API[Trace query API\nFastAPI]
     API --> Database
+    API -.->|Explicit opt-in context| AI[Configured external AI provider]
 ```
 
 TraceLens runs as one local Python process. The same FastAPI application owns both request forwarding and trace-query APIs. It listens on the configured proxy port, while its management endpoints live under `/api/*` and are never forwarded upstream.
+
+External AI analysis is disabled unless a provider endpoint, model, and API key are configured. The
+dashed edge is therefore absent during normal local proxy operation.
 
 ## Request Lifecycle
 
@@ -76,6 +91,7 @@ backend/
       forwarding.py
       capture.py
     services/
+      failure_analysis.py
       traces.py
   tests/
     api/
@@ -105,6 +121,10 @@ The proxy route is the only component that communicates with the upstream. Route
 | `response_body` | text, nullable | Captured only when safe and within limits |
 
 Indexes: `(timestamp)`, `(timestamp, id)` for reverse-chronological pagination, `(method, path, timestamp, id)` for endpoint latency analysis, `(path)`, `(status_code)`, and `(duration_ms)`.
+
+`failure_analysis_audits` stores local metadata for AI analysis attempts. It contains a timestamp,
+trace ID, model, body-sharing choice, outcome, provider status, and attempt count. Prompts, provider
+responses, and rendered analysis are not stored in that table.
 
 ## REST API Contract
 
@@ -163,6 +183,9 @@ Requests external AI analysis for one failed trace. Its body must include `share
 ```
 
 The endpoint returns `409` for non-failed traces, `503` when AI analysis has not been configured, and `502` for provider errors or invalid output.
+
+`share_data` is a required API field, not proof of caller identity. Because the management API is
+unauthenticated, the consent control assumes that only the trusted local operator can reach it.
 
 ### `DELETE /api/traces/{trace_id}`
 
@@ -237,21 +260,69 @@ Proxy error responses use a small JSON body with a stable `detail` field. Intern
 
 - Bind to `127.0.0.1` by default.
 - Native execution cannot select a non-loopback bind address. The Docker stack explicitly enables
-  container mode so TraceLens can listen on its private Compose network, and it does not publish
+  container mode so TraceLens can listen on its Compose network, and it does not publish
   the backend port to the host; the loopback-bound Nginx dashboard is the management API gateway.
 - Store data only in a local SQLite file; do not send telemetry.
-- Redact values for `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, and headers matching configurable sensitive-name patterns.
+- Redact values for `Authorization`, `Cookie`, `Set-Cookie`, and `X-Api-Key`. Other header names,
+  paths, query strings, and textual bodies are not content-aware redacted.
 - Do not capture multipart or binary request/response bodies in V1.
 - Capture JSON, text, and form bodies only when their content type is recognized and their size is within the configured limit.
 - Provide `DELETE /api/traces` as an immediate local purge.
 - Retain traces until explicit deletion by default. `--retention-hours` enables automatic pruning when a new trace is recorded; expired traces and their local analysis audit metadata are deleted together.
 - Keep AI analysis disabled unless `--ai-endpoint`, `--ai-model`, and `TRACELENS_AI_API_KEY` are configured.
-- Require per-analysis consent before any trace data leaves the device. Request and response bodies need separate opt-in.
+- Require the dashboard's per-analysis checkbox and the API's `share_data: true` assertion before
+  trace data leaves the device. Request and response bodies need a separate opt-in. These controls
+  assume a trusted local caller because the API has no authentication.
 - Send only the failed trace and up to five recent successful comparisons with the same method and path. Headers use redacted capture values; API keys are never persisted or exposed through management APIs.
 - Cap serialized AI context at `24 KiB` by default and truncate oversized captured fields before sharing. `--ai-max-context-bytes` must be at least `4096`.
 - Retry transient provider transport failures and `429 Too Many Requests` responses twice by default; `Retry-After` is honored with a two-second maximum delay. Configure retries with `--ai-max-retries` from `0` through `5`.
 - Request strict JSON-schema output from OpenAI-compatible providers and reject invalid structured responses.
 - Store a metadata-only audit row for each analysis action: timestamp, trace ID, model, body-sharing choice, outcome, provider status code, and attempt count. Prompts and analysis results are not persisted in audit storage.
+
+The authoritative trust boundaries, limitations, and operator checklist are in the
+[security model](security.md). In particular, loopback binding is not authentication, SQLite and
+the Docker volume are not encrypted by TraceLens, deletion is not secure media erasure, and the AI
+endpoint must be a trusted HTTPS service even though HTTPS is not enforced by configuration.
+
+## Docker Evaluation Topology
+
+The Compose file packages four services for local evaluation:
+
+```mermaid
+flowchart LR
+    Browser[Browser] -->|127.0.0.1:5173| Nginx[Dashboard / Nginx]
+    Nginx -->|/api on Compose network| TraceLens[TraceLens backend]
+    Seeder[One-shot traffic seeder] --> TraceLens
+    TraceLens --> Demo[Demo upstream]
+    TraceLens --> Volume[(tracelens-data volume)]
+```
+
+Only Nginx is published to the host, and its mapping is loopback-only. `tracelens` and
+`demo-upstream` use Compose networking without host port publication. Container mode makes the
+backend bind to `0.0.0.0` inside that network so Nginx and the seeder can reach it. The named volume
+survives `docker compose down` unless volumes are explicitly removed.
+
+This topology demonstrates the product; it does not add authentication, TLS, rate limits, network
+egress policy, encrypted storage, secret management, or tenant isolation. Publishing the backend,
+changing the dashboard mapping away from loopback, or attaching untrusted containers is outside
+the supported security boundary.
+
+## Experimental AI Data Flow
+
+The configured analysis client uses an OpenAI-style chat-completions request with strict
+JSON-schema response formatting. A request contains the failed trace and up to five successful
+same-endpoint comparisons. Metadata and stored redacted headers are always included; captured
+bodies are included only after the separate `include_bodies` opt-in. Query strings are not included.
+
+Context is capped at `24 KiB` by default by truncating individual fields and then dropping
+comparisons as needed. The API key is read from `TRACELENS_AI_API_KEY` and sent as a bearer token;
+it is not persisted in SQLite or returned by management APIs. TraceLens does not enforce HTTPS,
+restrict endpoint hosts, or control provider-side retention, so configuring a trusted HTTPS
+provider remains an operator responsibility.
+
+The service validates the response shape before returning it, but that does not establish factual
+accuracy. Trace data is untrusted model input and can contain prompt-injection content. Results are
+diagnostic suggestions for human review, not executable instructions or security decisions.
 
 ## Frontend
 
@@ -286,7 +357,7 @@ Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClie
 | Metrics | On-demand database aggregates | Avoids full-history ORM loads; pre-aggregation can come later if query volume grows |
 | Upstream errors | Preserve HTTP responses; synthesize gateway errors only for transport failures | Separates API failures from proxy failures |
 | UI updates | Two-second polling | Simple local-first behavior; WebSockets are deferred |
-| AI integration | OpenAI-compatible endpoint, explicit consent | Provider choice remains flexible; no data is sent without configuration and user approval |
+| AI integration | Experimental chat-completions endpoint, explicit request flags | Provider support varies; unauthenticated consent assumes a trusted local caller |
 | AI reliability | Bounded context, retry on transient failures, JSON schema | Limits data exposure and retry cost while keeping provider output machine-checkable |
 
 ## Delivery Plan
@@ -301,4 +372,4 @@ Tests use `pytest`, `pytest-asyncio`, FastAPI's `TestClient` or `httpx.AsyncClie
 ## Roadmap
 
 - **V2:** endpoint latency baselines and slow-request anomaly detection.
-- **V3:** optional OpenAI-compatible failure analysis, with explicit data-sharing controls.
+- **V3 experimental:** optional provider-backed failure analysis with explicit data-sharing controls; provider compatibility and hardening remain open work.
