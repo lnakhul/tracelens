@@ -35,6 +35,20 @@ make frontend
 
 Open `http://127.0.0.1:5173`. Point an application at `http://127.0.0.1:9000`; TraceLens forwards requests to the target and records them locally.
 
+## Try the Demo
+
+After installation, launch the deterministic demo environment:
+
+```bash
+make demo
+```
+
+It starts a local upstream API on port `8000`, TraceLens on port `9000`, seeds successful traffic, a slow request, and a failed order request, then starts the dashboard at `http://127.0.0.1:5173`. Select the failed `POST /orders` trace to inspect its captured request and response. The five normal `GET /reports/daily` calls followed by a slow one demonstrate the V2 latency anomaly signal. Press `Ctrl+C` in the demo terminal to stop all three services.
+
+![TraceLens dashboard showing seeded demo traffic](docs/screenshots/dashboard-demo.png)
+
+Run the upstream API alone with `make demo-api` when integrating TraceLens manually. The API exposes `GET /users/{id}`, `GET /reports/daily?slow=true`, and `POST /orders`; omit `customer_id` from an order to create a deterministic `500` response.
+
 ## Development
 
 The `Makefile` provides the common commands:
@@ -47,6 +61,8 @@ The `Makefile` provides the common commands:
 | `make build` | Produce a dashboard production build |
 | `make backend TARGET=http://localhost:8000` | Start the local proxy |
 | `make frontend` | Start the dashboard development server |
+| `make demo` | Start the demo upstream, proxy, seed traffic, and dashboard |
+| `make demo-api` | Start only the demo upstream API |
 
 To run without `make`:
 
