@@ -2,6 +2,8 @@
 
 The React and TypeScript interface for local TraceLens traffic.
 
+Requires Node.js 20.19+ or 22.12+.
+
 ```bash
 npm ci
 npm run dev
