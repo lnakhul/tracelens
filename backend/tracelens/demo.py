@@ -42,15 +42,21 @@ def create_demo_app() -> FastAPI:
     return app
 
 
-def main() -> None:
+def main(arguments: list[str] | None = None) -> None:
     """Run the demo upstream API."""
 
     import uvicorn
 
     parser = argparse.ArgumentParser(description="Run the TraceLens demo upstream API.")
+    parser.add_argument(
+        "--bind-host",
+        default="127.0.0.1",
+        choices=["127.0.0.1", "0.0.0.0"],
+        help="Listening address; use 0.0.0.0 only inside a container",
+    )
     parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-    uvicorn.run(create_demo_app(), host="127.0.0.1", port=args.port)
+    args = parser.parse_args(arguments)
+    uvicorn.run(create_demo_app(), host=args.bind_host, port=args.port)
 
 
 if __name__ == "__main__":

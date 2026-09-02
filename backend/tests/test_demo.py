@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from tracelens.demo import create_demo_app
+from tracelens.demo import create_demo_app, main
 
 
 def test_demo_api_provides_success_failure_and_latency_scenarios() -> None:
@@ -22,3 +22,17 @@ def test_demo_api_provides_success_failure_and_latency_scenarios() -> None:
     assert "customer_id" in failed_order.json()["detail"]
     assert report.status_code == 200
     assert report.json()["slow"] is True
+
+
+def test_demo_cli_accepts_container_bind_host(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(app: object, *, host: str, port: int) -> None:
+        captured.update(app=app, host=host, port=port)
+
+    monkeypatch.setattr("uvicorn.run", fake_run)
+
+    main(["--bind-host", "0.0.0.0", "--port", "8100"])
+
+    assert captured["host"] == "0.0.0.0"
+    assert captured["port"] == 8100
