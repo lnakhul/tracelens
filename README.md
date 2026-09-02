@@ -57,7 +57,7 @@ Docker Desktop with Docker Compose is the only additional prerequisite. Run the 
 make docker-demo
 ```
 
-Compose builds and starts the demo upstream, TraceLens, a production dashboard served by Nginx, and a one-shot traffic seeder. Open `http://127.0.0.1:5173` after the services are ready. The proxy management API is also available at `http://127.0.0.1:9000`. Both ports are published only to the local machine.
+Compose builds and starts the demo upstream, TraceLens, a production dashboard served by Nginx, and a one-shot traffic seeder. Open `http://127.0.0.1:5173` after the services are ready. Nginx proxies dashboard `/api` requests to TraceLens over the private Compose network; the backend's port `9000` is not published to the host.
 
 The SQLite database persists in the `tracelens-data` Docker volume, so traffic remains available across `docker compose down` and the next `make docker-demo`. Stop services with `make docker-down`. To remove all containerized traces and images created by the stack, run:
 
@@ -137,6 +137,8 @@ Use the dashboard detail panel to delete one trace, or `DELETE /api/traces` to p
 - Safe capture defaults: local binding, sensitive-header redaction, and bounded text-body capture
 
 TraceLens is deliberately a local developer tool. HTTPS interception, streaming, and remote deployment are deferred.
+
+Native runs always bind to `127.0.0.1`. The Docker demo enables an internal container mode so TraceLens can listen on its private Compose network, but Compose does not publish the backend port to the host. Container mode is reserved for the packaged stack and is not a public CLI option.
 
 ## V2: Latency Anomalies
 

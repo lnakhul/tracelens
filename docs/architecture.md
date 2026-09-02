@@ -233,6 +233,9 @@ Proxy error responses use a small JSON body with a stable `detail` field. Intern
 ## Privacy and Security
 
 - Bind to `127.0.0.1` by default.
+- Native execution cannot select a non-loopback bind address. The Docker stack explicitly enables
+  container mode so TraceLens can listen on its private Compose network, and it does not publish
+  the backend port to the host; the loopback-bound Nginx dashboard is the management API gateway.
 - Store data only in a local SQLite file; do not send telemetry.
 - Redact values for `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, and headers matching configurable sensitive-name patterns.
 - Do not capture multipart or binary request/response bodies in V1.

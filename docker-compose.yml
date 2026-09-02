@@ -12,15 +12,15 @@ services:
   tracelens:
     build:
       context: ./backend
+    environment:
+      TRACELENS_CONTAINER_MODE: "1"
     command:
       - --target
       - http://demo-upstream:8000
-      - --bind-host
-      - 0.0.0.0
       - --database-path
       - /data/tracelens.db
-    ports:
-      - "127.0.0.1:9000:9000"
+    expose:
+      - "9000"
     volumes:
       - tracelens-data:/data
     depends_on:
